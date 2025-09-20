@@ -1,0 +1,51 @@
+
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout
+    android:orientation="vertical" android:padding="16dp"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content">
+        <EditText android:id="@+id/etCols" android:hint="X (en, hücre)"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+        <EditText android:id="@+id/etRows" android:hint="Y (boy, hücre)"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+        <EditText android:id="@+id/etCellM" android:hint="Hücre boyu (m) 0.30"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+        <CheckBox android:id="@+id/cbAutoStride" android:text="Oto Stride"
+            android:checked="true"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <CheckBox android:id="@+id/cbStepMode" android:text="Adım Modu"
+            android:checked="true"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+        <Button android:id="@+id/btnStartGrid" android:text="Başlat"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+        <Button android:id="@+id/btnStopGrid" android:text="Durdur"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+    </LinearLayout>
+
+    <TextView android:id="@+id/tvInfo"
+        android:text="Başlamadı"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"/>
+
+    <TextView android:id="@+id/tvProgress"
+        android:text="0 hücre"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"/>
+</LinearLayout>
+</ScrollView>
