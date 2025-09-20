@@ -19,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ANDROID SDK KURULUMU
+      # Android SDK
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
@@ -29,12 +29,17 @@ jobs:
                               "platforms;android-34" \
                               "build-tools;34.0.0"
 
-      - name: Grant execute permission for gradlew (yoksa sessiz geçer)
+      # Gradle wrapper yoksa, Gradle'ı indir ve PATH'e ekle
+      - name: Download Gradle 8.7
         run: |
-          if [ -f ./gradlew ]; then chmod +x ./gradlew; else echo "no gradlew"; fi
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O gradle.zip
+          unzip -q gradle.zip
+          echo "GRADLE_HOME=$PWD/gradle-8.7" >> $GITHUB_ENV
+          echo "$PWD/gradle-8.7/bin" >> $GITHUB_PATH
+          gradle -v
 
       - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug
+        run: gradle :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
