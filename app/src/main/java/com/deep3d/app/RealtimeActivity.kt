@@ -12,112 +12,111 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import java.io.IOException
-import java.nio.charset.Charset
+import java.io.InputStream
 import java.util.UUID
 
 class RealtimeActivity : AppCompatActivity() {
 
     private lateinit var tvInfo: TextView
-    private var socket: BluetoothSocket? = null
-    private var readThread: Thread? = null
 
-    private val SPP_UUID: UUID =
+    private val sppUuid: UUID =
         UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+    private var socket: BluetoothSocket? = null
+    private var readerThread: Thread? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
+
         tvInfo = findViewById(R.id.tvInfo)
 
         val addr = intent.getStringExtra("deviceAddress")
-        if (addr.isNullOrEmpty()) {
-            Toast.makeText(this, "Adres yok (önce cihaza bağlan)", Toast.LENGTH_LONG).show()
+        if (addr.isNullOrBlank()) {
+            toast("Önce cihaza bağlan.")
             finish()
             return
         }
 
-        tvInfo.append("Gerçek zamanlı ekran (cihaz: $addr)\nBağlanıyor...\n")
-        connectAndStart(addr)
+        title = "Gerçek zamanlı ekran (cihaz: $addr)"
+        tvInfo.text = "Bağlanıyor..."
+
+        connectAndRead(addr)
     }
 
     @SuppressLint("MissingPermission")
-    private fun connectAndStart(address: String) {
+    private fun connectAndRead(address: String) {
+        // Android 12+ için BLUETOOTH_CONNECT izni kontrolü
+        if (Build.VERSION.SDK_INT >= 31 &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            toast("Bluetooth CONNECT izni gerekli")
+            return
+        }
+
         val bt = BluetoothAdapter.getDefaultAdapter()
-        if (bt == null) {
-            tvInfo.append("Bluetooth yok\n"); return
-        }
-        if (Build.VERSION.SDK_INT >= 31) {
-            val okC = ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-            if (!okC) { tvInfo.append("İzin gerekli: BLUETOOTH_CONNECT\n"); return }
+        val device: BluetoothDevice? = try { bt.getRemoteDevice(address) } catch (_: Exception) { null }
+        if (device == null) {
+            append("Cihaz bulunamadı: $address")
+            return
         }
 
-        val dev: BluetoothDevice? = try { bt.getRemoteDevice(address) } catch (_: IllegalArgumentException) { null }
-        if (dev == null) { tvInfo.append("Cihaz bulunamadı: $address\n"); return }
-
-        readThread = Thread {
+        readerThread = Thread {
             try {
-                val s = dev.createRfcommSocketToServiceRecord(SPP_UUID)
+                // varsa eski bağlantıyı kapat
+                runCatching { socket?.close() }
+
+                val s = device.createRfcommSocketToServiceRecord(sppUuid)
                 socket = s
-                bt.cancelDiscovery()
+
+                // discovery varsa durdur; yoksa connect yavaşlar
+                runCatching { if (bt.isDiscovering) bt.cancelDiscovery() }
+
                 s.connect()
-                runOnUiThread { tvInfo.append("Bağlandı. Veri okunuyor...\n") }
+                runOnUiThread { append("Bağlandı. Veri okunuyor...") }
 
-                // 1) Bazı cihazlar tetik bekler: ufak “ping”
-                try {
-                    val out = s.outputStream
-                    out.write("\n".toByteArray())
-                    out.write("START\r\n".toByteArray()) // cihaz görmezse yok sayar
-                    out.flush()
-                } catch (_: Exception) { /* yazamasak da sorun değil */ }
-
-                // 2) Ham bayt okuma döngüsü
-                val inp = s.inputStream
-                val buf = ByteArray(1024)
-                val lineBuffer = StringBuilder()
+                val input: InputStream = s.inputStream
+                val buf = ByteArray(256)
+                var total = 0
 
                 while (!Thread.currentThread().isInterrupted) {
-                    val n = inp.read(buf)  // bloklayıcı okuma
-                    if (n <= 0) continue
+                    val n = input.read(buf)  // bloklayıcı okuma
+                    if (n <= 0) break
+                    total += n
 
-                    // Gelen veriyi ASCII'ye çevir
-                    val chunk = String(buf, 0, n, Charset.forName("UTF-8"))
-                    lineBuffer.append(chunk)
-
-                    // Satır sonları varsa satır satır göster
-                    var idx = lineBuffer.indexOf("\n")
-                    while (idx >= 0) {
-                        val line = lineBuffer.substring(0, idx).trimEnd('\r')
-                        val toShow = if (line.isNotEmpty()) line else "(boş satır)"
-                        runOnUiThread { tvInfo.append("$toShow\n") }
-                        lineBuffer.delete(0, idx + 1)
-                        idx = lineBuffer.indexOf("\n")
+                    // ilk 16 baytı heks göster (hızlı teşhis)
+                    val preview = buf.copyOf(n).take(16).joinToString(" ") { b ->
+                        "%02X".format(b)
                     }
 
-                    // Hiç newline yoksa, yine de bir şeyler göstermek için
-                    if (!chunk.contains("\n") && lineBuffer.length > 200) {
-                        val preview = lineBuffer.toString()
-                        val hex = buf.copyOf(n).joinToString(" ") { b -> "%02X".format(b) }
-                        runOnUiThread {
-                            tvInfo.append("[NY] ${preview.take(80)}\n")
-                            tvInfo.append("[HEX] $hex\n")
-                        }
-                        // tamponu çok büyütmemek için kıs
-                        if (lineBuffer.length > 1000) lineBuffer.delete(0, lineBuffer.length - 200)
+                    runOnUiThread {
+                        append("n=$n, toplam=$total, önizleme= $preview")
                     }
                 }
-            } catch (e: IOException) {
-                runOnUiThread {
-                    tvInfo.append("Hata: ${e.message}\n")
-                    Toast.makeText(this, "Bağlantı koptu / okunamadı", Toast.LENGTH_LONG).show()
-                }
+
+            } catch (e: Exception) {
+                runOnUiThread { append("Hata: ${e.message}") }
+            } finally {
+                runCatching { socket?.close() }
             }
         }.also { it.start() }
     }
 
+    private fun append(line: String) {
+        tvInfo.text = buildString {
+            append(tvInfo.text)
+            if (tvInfo.text.isNotEmpty()) append("\n")
+            append(line)
+        }
+    }
+
+    private fun toast(msg: String) =
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
     override fun onDestroy() {
         super.onDestroy()
-        readThread?.interrupt()
-        try { socket?.close() } catch (_: Exception) {}
+        readerThread?.interrupt()
+        runCatching { socket?.close() }
     }
 }
