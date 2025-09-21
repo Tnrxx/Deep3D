@@ -6,18 +6,13 @@ import androidx.appcompat.app.AppCompatActivity
 
 class RealtimeActivity : AppCompatActivity() {
 
+    private lateinit var tvInfo: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
-        val tvInfo: TextView = findViewById(R.id.tvInfo)
-
-        // MainActivity'den gelen adres (varsa)
-        val addr = intent.getStringExtra("deviceAddress")
-        tvInfo.text = if (!addr.isNullOrEmpty()) {
-            "Gerçek zamanlı ekran (placeholder)\nBağlı cihaz: $addr"
-        } else {
-            "Gerçek zamanlı ekran (placeholder)\nBağlı cihaz yok."
-        }
+        tvInfo = findViewById(R.id.tvInfo)
+        tvInfo.text = "Gerçek zamanlı ekran (placeholder)"
     }
 }
