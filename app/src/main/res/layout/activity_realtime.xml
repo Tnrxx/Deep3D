@@ -5,30 +5,27 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <!-- RealtimeActivity.kt içinde kullanılan log alanı -->
-    <TextView
-        android:id="@+id/tvInfo"
+    <!-- Üstte log/mesaj alanı (kaydırılabilir) -->
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Gerçek zamanlı ekran"
-        android:textSize="18sp" />
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-    <!-- İsteğe bağlı komut girişi (RealtimeActivity bunu bekliyor) -->
-    <EditText
-        android:id="@+id/etCmd"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:hint="Cihaza gönderilecek komut (opsiyonel)"
-        android:inputType="text" />
+        <TextView
+            android:id="@+id/tvInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Gerçek zamanlı ekran (placeholder)"
+            android:textSize="16sp" />
+    </ScrollView>
 
-    <!-- Gönder / Temizle butonları -->
+    <!-- Altta butonlar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="end"
-        android:layout_marginTop="12dp">
+        android:paddingTop="8dp">
 
         <Button
             android:id="@+id/btnSend"
@@ -40,8 +37,8 @@
             android:id="@+id/btnClear"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:text="Temizle" />
+            android:text="Temizle"
+            android:layout_marginStart="12dp" />
     </LinearLayout>
 
 </LinearLayout>
