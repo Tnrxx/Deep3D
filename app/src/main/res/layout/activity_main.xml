@@ -7,11 +7,11 @@
 
     <TextView
         android:id="@+id/tvState"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Hazır"
         android:textSize="18sp"
-        android:paddingBottom="12dp" />
+        android:paddingBottom="16dp" />
 
     <Button
         android:id="@+id/btnConnect"
