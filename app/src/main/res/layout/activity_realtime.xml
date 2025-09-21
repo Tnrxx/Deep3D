@@ -7,9 +7,8 @@
 
     <TextView
         android:id="@+id/tvRealtime"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Gerçek zaman"
-        android:textSize="18sp"
-        android:padding="8dp" />
+        android:text="Gerçek zamanlı ekran (placeholder)"
+        android:textSize="18sp" />
 </LinearLayout>
