@@ -6,24 +6,10 @@
     android:padding="16dp">
 
     <TextView
-        android:id="@+id/tvInfo"
+        android:id="@+id/tvRealtime"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Gerçek Zaman Ekranı"
+        android:text="Gerçek zaman"
         android:textSize="18sp"
-        android:paddingBottom="12dp" />
-
-    <Button
-        android:id="@+id/btnStart"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Başlat" />
-
-    <Button
-        android:id="@+id/btnStop"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Durdur"
-        android:layout_marginTop="8dp" />
-
+        android:padding="8dp" />
 </LinearLayout>
