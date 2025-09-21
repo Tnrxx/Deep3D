@@ -2,14 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.deep3d.app">
 
-    <!-- Android 12+ için BT izinleri -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <!-- Android 12+ için yeni BT izinleri -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
-    <!-- Android 11 ve öncesi için -->
-    <uses-permission android:name="android.permission.BLUETOOTH"/>
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Eski sürümler için klasik izinler -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -17,7 +17,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
-        <!-- LAUNCHER (exported zorunlu) -->
+        <!-- Yeni gerçek zaman ekranı -->
+        <activity android:name=".RealtimeActivity" />
+
+        <!-- Cihaz tarama/bağlanma ekranı -->
+        <activity android:name=".DeviceListActivity" />
+
+        <!-- Launcher -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -27,9 +33,5 @@
             </intent-filter>
         </activity>
 
-        <!-- Cihaz listeleme/bağlanma ekranı -->
-        <activity
-            android:name=".DeviceListActivity"
-            android:exported="false" />
     </application>
 </manifest>
