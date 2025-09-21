@@ -17,17 +17,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
-        <!-- Gerçek zaman ekranı -->
         <activity
             android:name=".RealtimeActivity"
             android:exported="false" />
 
-        <!-- Cihaz tarama -->
         <activity
             android:name=".DeviceListActivity"
             android:exported="false" />
 
-        <!-- Launcher -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
