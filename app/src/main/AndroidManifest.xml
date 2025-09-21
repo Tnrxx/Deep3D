@@ -1,18 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.deep3d.app">
 
-    <!-- Bluetooth için izinler -->
-    <!-- Android 12+ -->
+    <!-- Android 12+ için Bluetooth izinleri -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation" />
-    <!-- Android 6–11 (eski cihazlar) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Daha eski cihazlar için (no-op olabilir ama sorun çıkarmaz) -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <!-- Eski sürümlerde tarama için gerekli olabilir -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -20,7 +16,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
-        <!-- LAUNCHER aktivitesi (exported = true ZORUNLU) -->
+        <!-- LAUNCHER -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -30,14 +26,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Diğer ekranlar (exported = false) -->
+        <!-- Cihaz tarama/listesi ekranı -->
         <activity
-            android:name=".RealtimeActivity"
+            android:name=".DeviceListActivity"
             android:exported="false" />
-
-        <activity
-            android:name=".GridActivity"
-            android:exported="false" />
-
     </application>
 </manifest>
