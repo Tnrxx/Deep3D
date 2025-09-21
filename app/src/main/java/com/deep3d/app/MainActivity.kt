@@ -1,3 +1,4 @@
+// app/src/main/java/com/deep3d/app/MainActivity.kt
 package com.deep3d.app
 
 import android.app.Activity
@@ -15,39 +16,51 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
+    // Son bağlanılan cihaz adresini tutacağız
+    private var lastAddress: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvState = findViewById(R.id.tvState)
-        btnConnect = findViewById(R.id.btnConnect)
-        btnRealtime = findViewById(R.id.btnRealtime)
-        btnGrid = findViewById(R.id.btnGrid)
+        tvState = findViewById(R.id.tvState)       // XML'deki id: tvState
+        btnConnect = findViewById(R.id.btnConnect) // btnConnect
+        btnRealtime = findViewById(R.id.btnRealtime) // btnRealtime
+        btnGrid = findViewById(R.id.btnGrid)       // btnGrid
 
         tvState.text = "Hazır"
 
-        // Cihaz listesi (Bluetooth tarama/bağlanma)
+        // 1) Cihaz listesine git
         btnConnect.setOnClickListener {
             val i = Intent(this, DeviceListActivity::class.java)
             startActivityForResult(i, 2001)
         }
 
-        // Gerçek zaman ekranı (şimdilik placeholder)
+        // 2) Realtime’a sadece adres varsa git
         btnRealtime.setOnClickListener {
-            startActivity(Intent(this, RealtimeActivity::class.java))
+            val addr = lastAddress
+            if (addr.isNullOrEmpty()) {
+                Toast.makeText(this, "Önce cihaza bağlan.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val i = Intent(this, RealtimeActivity::class.java)
+            i.putExtra("deviceAddress", addr)
+            startActivity(i)
         }
 
-        // Grid/Harita şimdilik bilgi
+        // 3) Grid/Harita şimdilik pasif
         btnGrid.setOnClickListener {
             Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    @Deprecated("Basit kullanım için onActivityResult yeterli")
+    // DeviceListActivity'den dönen adresi al
+    @Deprecated("Basit kullanım için yeterli")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 2001 && resultCode == Activity.RESULT_OK) {
             val addr = data?.getStringExtra("deviceAddress") ?: return
+            lastAddress = addr
             tvState.text = "Bağlandı: $addr"
             Toast.makeText(this, "Cihaz bağlandı ($addr)", Toast.LENGTH_SHORT).show()
         }
