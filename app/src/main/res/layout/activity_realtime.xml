@@ -1,12 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
 
     <TextView
-        android:id="@+id/tvRealtimeInfo"
-        android:layout_width="wrap_content"
+        android:id="@+id/tvRealtimeStatus"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Gerçek Zamanlı ekran (örnek)"
-        android:layout_gravity="center" />
-</FrameLayout>
+        android:text="Hazır – bağlan ve başlat"
+        android:textSize="18sp" />
+
+    <Button
+        android:id="@+id/btnStartStream"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Kalibrasyon Başlat" />
+
+    <Button
+        android:id="@+id/btnStopStream"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Durdur" />
+
+</LinearLayout>
