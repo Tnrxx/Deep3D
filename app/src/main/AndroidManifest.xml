@@ -18,12 +18,16 @@
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
         <!-- Yeni gerçek zaman ekranı -->
-        <activity android:name=".RealtimeActivity" />
+        <activity
+            android:name=".RealtimeActivity"
+            android:exported="false" />
 
         <!-- Cihaz tarama/bağlanma ekranı -->
-        <activity android:name=".DeviceListActivity" />
+        <activity
+            android:name=".DeviceListActivity"
+            android:exported="false" />
 
-        <!-- Launcher -->
+        <!-- Launcher (Ana ekran) -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
