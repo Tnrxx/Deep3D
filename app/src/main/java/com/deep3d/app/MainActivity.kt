@@ -26,24 +26,21 @@ class MainActivity : AppCompatActivity() {
 
         tvState.text = "Hazır"
 
-        // Bluetooth cihaz listesi
         btnConnect.setOnClickListener {
-            val i = Intent(this, DeviceListActivity::class.java)
-            startActivityForResult(i, 2001)
+            startActivityForResult(Intent(this, DeviceListActivity::class.java), 2001)
         }
 
-        // Gerçek zaman ekranına geç
+        // ÖNEMLİ: RealtimeActivity’yi aç
         btnRealtime.setOnClickListener {
             startActivity(Intent(this, RealtimeActivity::class.java))
         }
 
-        // Grid/Harita (şimdilik bilgi)
         btnGrid.setOnClickListener {
             Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    @Deprecated("Basit kullanım için onActivityResult yeterli")
+    @Deprecated("Basit akış için yeterli")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 2001 && resultCode == Activity.RESULT_OK) {
