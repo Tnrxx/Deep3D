@@ -8,26 +8,51 @@ import android.bluetooth.BluetoothSocket
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import java.io.IOException
+import java.nio.charset.Charset
 import java.util.UUID
 import kotlin.concurrent.thread
 
 class RealtimeActivity : AppCompatActivity() {
 
     private lateinit var tvInfo: TextView
+    private lateinit var spCmd: Spinner
+    private lateinit var btnSend: Button
+    private lateinit var btnClear: Button
 
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private var socket: BluetoothSocket? = null
     @Volatile private var readerRunning = false
 
+    // Denenecek hazır komutlar (bir kısmı binary)
+    private val canned = listOf(
+        "CRLF (\\r\\n)"              to byteArrayOf(0x0D, 0x0A),
+        "'S'"                        to byteArrayOf('S'.code.toByte()),
+        "'START\\r\\n'"              to "START\r\n".toByteArray(),
+        "'R\\r\\n'"                  to "R\r\n".toByteArray(),
+        "0xAA 0x55"                  to byteArrayOf(0xAA.toByte(), 0x55.toByte()),
+        "0xA5 0x5A"                  to byteArrayOf(0xA5.toByte(), 0x5A.toByte()),
+        "'BEGIN\\n'"                 to "BEGIN\n".toByteArray(),
+        "'AT'"                       to "AT".toByteArray(),
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
+
         tvInfo = findViewById(R.id.tvInfo)
+        spCmd  = findViewById(R.id.spCmd)
+        btnSend = findViewById(R.id.btnSend)
+        btnClear = findViewById(R.id.btnClear)
+
+        spCmd.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            canned.map { it.first }
+        )
 
         val addr = intent.getStringExtra("deviceAddress")
         if (addr.isNullOrBlank()) {
@@ -36,7 +61,18 @@ class RealtimeActivity : AppCompatActivity() {
         }
         tvInfo.text = "Gerçek zamanlı ekran (cihaz: $addr)\nBağlanıyor…"
 
-        connectAndRead(addr)
+        btnClear.setOnClickListener {
+            tvInfo.text = "Gerçek zamanlı ekran (cihaz: $addr)\n"
+        }
+
+        btnSend.setOnClickListener {
+            val idx = spCmd.selectedItemPosition
+            val payload = canned[idx].second
+            sendBytes(payload)
+            append("Komut gönderildi (${payload.size} bayt): ${canned[idx].first}")
+        }
+
+        connectAndStartReader(addr)
     }
 
     override fun onDestroy() {
@@ -45,101 +81,64 @@ class RealtimeActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun append(line: String) = runOnUiThread {
+        val newText = tvInfo.text.toString() + line + "\n"
+        tvInfo.text = if (newText.length > 20000) newText.takeLast(20000) else newText
+    }
+
     @SuppressLint("MissingPermission")
-    private fun connectAndRead(address: String) {
+    private fun connectAndStartReader(address: String) {
         val bt = BluetoothAdapter.getDefaultAdapter()
         if (bt == null) {
-            tvInfo.append("\nBu cihazda Bluetooth yok.")
+            append("Bu cihazda Bluetooth yok.")
             return
         }
-
-        // Android 12+ izin kontrolü
         if (Build.VERSION.SDK_INT >= 31) {
-            val okConnect = ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-            if (!okConnect) {
-                tvInfo.append("\nBLUETOOTH_CONNECT izni gerekli.")
-                return
-            }
+            val ok = ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            if (!ok) { append("BLUETOOTH_CONNECT izni gerekli."); return }
         }
 
         val dev: BluetoothDevice = bt.getRemoteDevice(address)
 
         thread {
             try {
-                // Eski bir soket varsa kapat
                 runCatching { socket?.close() }
-
                 val s = dev.createRfcommSocketToServiceRecord(sppUuid)
                 socket = s
-                // Discovery açık ise kapat (bağlantıyı yavaşlatır)
                 if (bt.isDiscovering) bt.cancelDiscovery()
                 s.connect()
+                append("Bağlandı. Veri okunuyor…")
 
-                runOnUiThread {
-                    tvInfo.append("\nBağlandı. Veri okunuyor…")
-                }
-
-                // --- Test “probe” paketleri (cihaz veri akışını tetikliyorsa görürüz)
-                val out = s.outputStream
-                val probes = listOf(
-                    byteArrayOf(0x0D, 0x0A),          // CRLF
-                    byteArrayOf('S'.code.toByte()),   // 'S' başlat
-                    byteArrayOf(0xAA.toByte(), 0x55.toByte()) // AA55
-                )
-                for (p in probes) {
-                    runCatching {
-                        out.write(p)
-                        out.flush()
-                        runOnUiThread { tvInfo.append("\nProbe gönderildi (${p.size} bayt)") }
-                        Thread.sleep(150)
-                    }
-                }
-
-                // --- Sürekli okuma (HEX dump)
-                val `in` = s.inputStream
+                // Okuyucu
+                val ins = s.inputStream
+                val buf = ByteArray(512)
                 readerRunning = true
-                val sb = StringBuilder()
-                val buf = ByteArray(256)
-
-                var lastAnyDataMs = System.currentTimeMillis()
                 while (readerRunning) {
-                    val n = try { `in`.read(buf) } catch (e: IOException) { -1 }
+                    val n = try { ins.read(buf) } catch (_: IOException) { -1 }
                     if (n <= 0) break
 
-                    lastAnyDataMs = System.currentTimeMillis()
-                    // geleni hex’e çevir
-                    for (i in 0 until n) {
-                        sb.append(String.format("%02X ", buf[i]))
+                    // HEX + ASCII göster
+                    val hex = buildString {
+                        for (i in 0 until n) append(String.format("%02X ", buf[i]))
                     }
-                    sb.append(" | ")
-                    // okunabilir ASCII karakterleri de göster
                     val ascii = buf.copyOfRange(0, n).map {
                         val c = it.toInt() and 0xFF
                         if (c in 32..126) c.toChar() else '.'
                     }.joinToString("")
-                    sb.append(ascii)
-                    sb.append('\n')
-
-                    val text = sb.toString()
-                    runOnUiThread {
-                        // Aşırı büyümeyi engelle
-                        val trimmed = if (text.length > 20000) text.takeLast(20000) else text
-                        tvInfo.text = "Gerçek zamanlı ekran (cihaz: $address)\n$trimmed"
-                    }
+                    append("RX ${n}B  HEX: $hex | ASCII: $ascii")
                 }
-
-                // hiç veri yoksa uyarı
-                if (System.currentTimeMillis() - lastAnyDataMs > 5000) {
-                    runOnUiThread {
-                        tvInfo.append("\n5 sn içinde veri gelmedi. Cihaz akışı başlatmak için özel komut bekliyor olabilir.")
-                    }
-                }
+                append("Okuma durdu.")
             } catch (e: Exception) {
-                runOnUiThread {
-                    tvInfo.append("\nHata: ${e.message}")
-                    Toast.makeText(this, "Bağlantı/okuma hatası: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                append("Hata: ${e.message}")
             }
         }
+    }
+
+    private fun sendBytes(bytes: ByteArray) {
+        val out = socket?.outputStream ?: return
+        runCatching {
+            out.write(bytes)
+            out.flush()
+        }.onFailure { append("Gönderme hatası: ${it.message}") }
     }
 }
