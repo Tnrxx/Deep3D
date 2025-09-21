@@ -1,4 +1,3 @@
-// app/src/main/java/com/deep3d/app/MainActivity.kt
 package com.deep3d.app
 
 import android.app.Activity
@@ -16,53 +15,63 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
-    // Son bağlanılan cihaz adresini tutacağız
-    private var lastAddress: String? = null
+    // Kalıcı saklama
+    private val prefs by lazy { getSharedPreferences("deep3d_prefs", MODE_PRIVATE) }
+    private val KEY_DEVICE_ADDR = "device_addr"
+
+    // Hafızadaki durum (null değilse bağlı kabul)
+    private var deviceAddress: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvState = findViewById(R.id.tvState)       // XML'deki id: tvState
-        btnConnect = findViewById(R.id.btnConnect) // btnConnect
-        btnRealtime = findViewById(R.id.btnRealtime) // btnRealtime
-        btnGrid = findViewById(R.id.btnGrid)       // btnGrid
+        tvState     = findViewById(R.id.tvState)
+        btnConnect  = findViewById(R.id.btnConnect)
+        btnRealtime = findViewById(R.id.btnRealtime)
+        btnGrid     = findViewById(R.id.btnGrid)
 
-        tvState.text = "Hazır"
+        // Uygulama yeniden açılmış olsa da adresi geri yükle
+        deviceAddress = prefs.getString(KEY_DEVICE_ADDR, null)
+        tvState.text = if (deviceAddress.isNullOrEmpty()) "Hazır" else "Bağlandı: $deviceAddress"
 
-        // 1) Cihaz listesine git
+        // 1) Cihaz listesi
         btnConnect.setOnClickListener {
             val i = Intent(this, DeviceListActivity::class.java)
             startActivityForResult(i, 2001)
         }
 
-        // 2) Realtime’a sadece adres varsa git
+        // 2) Realtime
         btnRealtime.setOnClickListener {
-            val addr = lastAddress
+            val addr = deviceAddress
             if (addr.isNullOrEmpty()) {
                 Toast.makeText(this, "Önce cihaza bağlan.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+            } else {
+                val i = Intent(this, RealtimeActivity::class.java)
+                i.putExtra("deviceAddress", addr)
+                startActivity(i)
             }
-            val i = Intent(this, RealtimeActivity::class.java)
-            i.putExtra("deviceAddress", addr)
-            startActivity(i)
         }
 
-        // 3) Grid/Harita şimdilik pasif
+        // 3) Grid/Harita (şimdilik)
         btnGrid.setOnClickListener {
             Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // DeviceListActivity'den dönen adresi al
-    @Deprecated("Basit kullanım için yeterli")
+    @Deprecated("Basit kullanım için onActivityResult yeterli")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 2001 && resultCode == Activity.RESULT_OK) {
-            val addr = data?.getStringExtra("deviceAddress") ?: return
-            lastAddress = addr
-            tvState.text = "Bağlandı: $addr"
-            Toast.makeText(this, "Cihaz bağlandı ($addr)", Toast.LENGTH_SHORT).show()
+            deviceAddress = data?.getStringExtra("deviceAddress")
+            if (!deviceAddress.isNullOrEmpty()) {
+                // Ekranı güncelle + kalıcı kaydet
+                tvState.text = "Bağlandı: $deviceAddress"
+                prefs.edit().putString(KEY_DEVICE_ADDR, deviceAddress).apply()
+                Toast.makeText(this, "Cihaz bağlandı ($deviceAddress)", Toast.LENGTH_SHORT).show()
+            } else {
+                tvState.text = "Hazır"
+            }
         }
     }
 }
