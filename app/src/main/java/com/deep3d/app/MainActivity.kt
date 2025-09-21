@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
@@ -15,39 +16,45 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
+    // registerForActivityResult ile modern dönüş yakalama
+    private val pickDevice =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val addr = result.data?.getStringExtra("deviceAddress")
+                if (!addr.isNullOrEmpty()) {
+                    tvState.text = "Bağlandı: $addr"
+                    Toast.makeText(this, "Cihaz bağlandı ($addr)", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Bağlantı iptal edildi", Toast.LENGTH_SHORT).show()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvState = findViewById(R.id.tvState)      // yoksa: durum yazdığın TextView id'sini ver
+        tvState = findViewById(R.id.tvState)      // activity_main.xml içinde olmalı
         btnConnect = findViewById(R.id.btnConnect)
         btnRealtime = findViewById(R.id.btnRealtime)
         btnGrid = findViewById(R.id.btnGrid)
 
         tvState.text = "Hazır"
 
-        // 1) Bağlan: DeviceListActivity aç
+        // 1) Bağlan butonu → DeviceListActivity
         btnConnect.setOnClickListener {
-            val i = Intent(this, DeviceListActivity::class.java)
-            startActivityForResult(i, 2001)
+            val intent = Intent(this, DeviceListActivity::class.java)
+            pickDevice.launch(intent)
         }
 
-        // 2) Realtime ve Grid şimdilik bilgi amaçlı
+        // 2) Realtime (şimdilik sadece bilgi)
         btnRealtime.setOnClickListener {
             Toast.makeText(this, "Realtime ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
+
+        // 3) Grid/Harita (şimdilik sadece bilgi)
         btnGrid.setOnClickListener {
             Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    @Deprecated("onActivityResult is fine for this simple case")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 2001 && resultCode == Activity.RESULT_OK) {
-            val addr = data?.getStringExtra("deviceAddress") ?: return
-            tvState.text = "Bağlandı: $addr"
-            Toast.makeText(this, "Cihaz bağlandı ($addr)", Toast.LENGTH_SHORT).show()
         }
     }
 }
