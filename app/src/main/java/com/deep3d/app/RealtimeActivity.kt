@@ -8,24 +8,21 @@ import androidx.appcompat.app.AppCompatActivity
 
 class RealtimeActivity : AppCompatActivity() {
 
-    private lateinit var tvRealtimeStatus: TextView
-    private lateinit var btnStartStream: Button
-    private lateinit var btnStopStream: Button
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
-        tvRealtimeStatus = findViewById(R.id.tvRealtimeStatus)
-        btnStartStream = findViewById(R.id.btnStartStream)
-        btnStopStream = findViewById(R.id.btnStopStream)
+        val tv = findViewById<TextView>(R.id.tvInfo)
+        val btnStart = findViewById<Button>(R.id.btnStart)
+        val btnStop = findViewById<Button>(R.id.btnStop)
 
-        tvRealtimeStatus.text = "Hazır – bağlan ve başlat"
+        tv.text = "Gerçek zamanlı akış (demo)"
 
-        btnStartStream.setOnClickListener {
-            Toast.makeText(this, "Kalibrasyon/akış (demo)", Toast.LENGTH_SHORT).show()
+        btnStart.setOnClickListener {
+            Toast.makeText(this, "Başlatıldı (demo)", Toast.LENGTH_SHORT).show()
         }
-        btnStopStream.setOnClickListener {
+
+        btnStop.setOnClickListener {
             Toast.makeText(this, "Durduruldu (demo)", Toast.LENGTH_SHORT).show()
         }
     }
