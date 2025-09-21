@@ -1,18 +1,17 @@
 package com.deep3d.app
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,24 +20,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
-    private val btAdapter: BluetoothAdapter? by lazy { BluetoothAdapter.getDefaultAdapter() }
-
-    // Android 12+ için Bluetooth çalışma zamanı izinleri
-    private val requiredPerms by lazy {
-        val perms = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            perms += Manifest.permission.BLUETOOTH_SCAN
-            perms += Manifest.permission.BLUETOOTH_CONNECT
-        }
-        perms += Manifest.permission.ACCESS_FINE_LOCATION
-        perms.toTypedArray()
-    }
-
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
-            // izin sonrası sadece bilgi verelim
-            Toast.makeText(this, "İzinler güncellendi", Toast.LENGTH_SHORT).show()
-        }
+    private val permLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* dönüş gerekmiyor; izin verildiyse butonlar çalışır */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,42 +35,37 @@ class MainActivity : AppCompatActivity() {
 
         status.text = "Hazır"
 
+        // Gerekli izinleri iste
+        requestNeededPermissions()
+
+        // 1) Bağlan (Bluetooth ayarlarını aç – hızlı eşleştirme)
         btnConnect.setOnClickListener {
-            ensurePerms()
-            if (btAdapter == null) {
-                toast("Bu cihazda Bluetooth yok")
-                return@setOnClickListener
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                toast("Bluetooth izni gerekiyor")
-                return@setOnClickListener
-            }
-            // Bluetooth ayarlarına yönlendir (şimdilik)
-            startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
+            // Telefonun Bluetooth ayarlarına gitsin
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
 
+        // 2) Gerçek zamanlı ekran
         btnRealtime.setOnClickListener {
-            ensurePerms()
             startActivity(Intent(this, RealtimeActivity::class.java))
         }
 
+        // 3) Grid/Harita ekranı
         btnGrid.setOnClickListener {
-            ensurePerms()
             startActivity(Intent(this, GridActivity::class.java))
         }
     }
 
-    private fun ensurePerms() {
-        val missing = requiredPerms.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+    private fun requestNeededPermissions() {
+        val wants = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            wants += Manifest.permission.BLUETOOTH_SCAN
+            wants += Manifest.permission.BLUETOOTH_CONNECT
+        } else {
+            // Eski sürümler için konum gerekli olabilir
+            wants += Manifest.permission.ACCESS_FINE_LOCATION
         }
-        if (missing.isNotEmpty()) {
-            permissionLauncher.launch(missing.toTypedArray())
+        if (wants.any { ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }) {
+            permLauncher.launch(wants.toTypedArray())
         }
     }
-
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }
