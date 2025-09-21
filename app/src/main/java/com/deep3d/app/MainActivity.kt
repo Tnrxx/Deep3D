@@ -26,42 +26,30 @@ class MainActivity : AppCompatActivity() {
 
         tvState.text = "Hazır"
 
-        // 1) Bağlan ekranını aç (DeviceListActivity)
+        // Cihaz listesine git (Bluetooth tarama/bağlanma)
         btnConnect.setOnClickListener {
             val i = Intent(this, DeviceListActivity::class.java)
             startActivityForResult(i, 2001)
         }
 
-        // 2) Gerçek zaman ekranını aç (RealtimeActivity)
+        // >>> BU SATIR ÖNEMLİ: Gerçek zaman ekranını aç
         btnRealtime.setOnClickListener {
             startActivity(Intent(this, RealtimeActivity::class.java))
         }
 
-        // 3) Grid/Harita şimdilik bilgi amaçlı
+        // Grid/Harita şimdilik pasif bilgi mesajı
         btnGrid.setOnClickListener {
             Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
-
-        // Son bağlanılan cihazı etiket olarak göster (varsa)
-        val last = getSharedPreferences("app", MODE_PRIVATE).getString("lastDevice", null)
-        if (!last.isNullOrEmpty()) {
-            tvState.text = "Bağlı (en son): $last"
-        }
     }
 
-    @Deprecated("onActivityResult is fine for this simple case")
+    @Deprecated("Basit kullanım için onActivityResult yeterli")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 2001 && resultCode == Activity.RESULT_OK) {
             val addr = data?.getStringExtra("deviceAddress") ?: return
             tvState.text = "Bağlandı: $addr"
             Toast.makeText(this, "Cihaz bağlandı ($addr)", Toast.LENGTH_SHORT).show()
-
-            // RealtimeActivity'nin kullanabilmesi için sakla
-            getSharedPreferences("app", MODE_PRIVATE)
-                .edit()
-                .putString("lastDevice", addr)
-                .apply()
         }
     }
 }
