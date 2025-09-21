@@ -12,140 +12,134 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import java.io.InputStream
+import java.io.IOException
 import java.util.UUID
+import kotlin.concurrent.thread
 
 class RealtimeActivity : AppCompatActivity() {
 
     private lateinit var tvInfo: TextView
 
-    private val sppUuid: UUID =
-        UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-
+    private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private var socket: BluetoothSocket? = null
-    private var readerThread: Thread? = null
+    @Volatile private var readerRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
-
         tvInfo = findViewById(R.id.tvInfo)
 
         val addr = intent.getStringExtra("deviceAddress")
         if (addr.isNullOrBlank()) {
-            toast("Önce cihaza bağlan.")
-            finish()
+            tvInfo.text = "Önce cihaza bağlan."
             return
         }
-
-        title = "Gerçek zamanlı ekran (cihaz: $addr)"
-        tvInfo.text = "Bağlanıyor..."
+        tvInfo.text = "Gerçek zamanlı ekran (cihaz: $addr)\nBağlanıyor…"
 
         connectAndRead(addr)
     }
 
-    // --- Yardımcılar ---
-    private fun append(line: String) {
-        tvInfo.text = buildString {
-            append(tvInfo.text)
-            if (tvInfo.text.isNotEmpty()) append("\n")
-            append(line)
-        }
+    override fun onDestroy() {
+        readerRunning = false
+        runCatching { socket?.close() }
+        super.onDestroy()
     }
-    private fun toast(msg: String) =
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-    // --- Ana iş: bağlan + veri oku ---
     @SuppressLint("MissingPermission")
     private fun connectAndRead(address: String) {
-        if (Build.VERSION.SDK_INT >= 31 &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            toast("Bluetooth CONNECT izni gerekli")
+        val bt = BluetoothAdapter.getDefaultAdapter()
+        if (bt == null) {
+            tvInfo.append("\nBu cihazda Bluetooth yok.")
             return
         }
 
-        val bt = BluetoothAdapter.getDefaultAdapter()
-        val device: BluetoothDevice? = runCatching { bt.getRemoteDevice(address) }.getOrNull()
-        if (device == null) { append("Cihaz bulunamadı: $address"); return }
+        // Android 12+ izin kontrolü
+        if (Build.VERSION.SDK_INT >= 31) {
+            val okConnect = ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            if (!okConnect) {
+                tvInfo.append("\nBLUETOOTH_CONNECT izni gerekli.")
+                return
+            }
+        }
 
-        readerThread = Thread {
+        val dev: BluetoothDevice = bt.getRemoteDevice(address)
+
+        thread {
             try {
+                // Eski bir soket varsa kapat
                 runCatching { socket?.close() }
 
-                // 1) Secure SPP
-                val s1 = runCatching { device.createRfcommSocketToServiceRecord(sppUuid) }.getOrNull()
-                val sock = when {
-                    tryConnect(bt, s1) != null -> s1!!
-                    // 2) Insecure SPP
-                    else -> {
-                        val s2 = runCatching { device.createInsecureRfcommSocketToServiceRecord(sppUuid) }.getOrNull()
-                        if (tryConnect(bt, s2) != null) s2!!
-                        // 3) Kanal 1 fallback (bazı cihazlar böyle açılır)
-                        else {
-                            val s3 = runCatching {
-                                val m = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
-                                m.invoke(device, 1) as BluetoothSocket
-                            }.getOrNull()
-                            if (tryConnect(bt, s3) != null) s3!!
-                            else throw RuntimeException("Bağlantı kurulamadı (tüm yöntemler denendi).")
-                        }
+                val s = dev.createRfcommSocketToServiceRecord(sppUuid)
+                socket = s
+                // Discovery açık ise kapat (bağlantıyı yavaşlatır)
+                if (bt.isDiscovering) bt.cancelDiscovery()
+                s.connect()
+
+                runOnUiThread {
+                    tvInfo.append("\nBağlandı. Veri okunuyor…")
+                }
+
+                // --- Test “probe” paketleri (cihaz veri akışını tetikliyorsa görürüz)
+                val out = s.outputStream
+                val probes = listOf(
+                    byteArrayOf(0x0D, 0x0A),          // CRLF
+                    byteArrayOf('S'.code.toByte()),   // 'S' başlat
+                    byteArrayOf(0xAA.toByte(), 0x55.toByte()) // AA55
+                )
+                for (p in probes) {
+                    runCatching {
+                        out.write(p)
+                        out.flush()
+                        runOnUiThread { tvInfo.append("\nProbe gönderildi (${p.size} bayt)") }
+                        Thread.sleep(150)
                     }
                 }
 
-                socket = sock
-                runOnUiThread { append("Bağlandı. Veri okunuyor...") }
+                // --- Sürekli okuma (HEX dump)
+                val `in` = s.inputStream
+                readerRunning = true
+                val sb = StringBuilder()
+                val buf = ByteArray(256)
 
-                // Bazı cihazlar veri için "uyanma" komutu ister — küçük probelar gönderiyoruz.
-                val out = sock.outputStream
-                val probes = arrayOf(
-                    byteArrayOf(0x0A),                // LF
-                    "PING\n".toByteArray(),           // ASCII
-                    byteArrayOf(0x55, 0xAA.toByte()) // 0x55 0xAA
-                )
-                for (p in probes) {
-                    runCatching { out.write(p); out.flush() }
-                    runOnUiThread { append("Probe gönderildi (${p.size} bayt)") }
-                    Thread.sleep(300)
-                }
-
-                // Okuma döngüsü
-                val input: InputStream = sock.inputStream
-                val buf = ByteArray(512)
-                var total = 0
-                while (!Thread.currentThread().isInterrupted) {
-                    val n = runCatching { input.read(buf) }.getOrNull() ?: break
+                var lastAnyDataMs = System.currentTimeMillis()
+                while (readerRunning) {
+                    val n = try { `in`.read(buf) } catch (e: IOException) { -1 }
                     if (n <= 0) break
-                    total += n
-                    val preview = buf.copyOf(n).take(16).joinToString(" ") { "%02X".format(it) }
-                    runOnUiThread { append("n=$n, toplam=$total, önizleme=$preview") }
+
+                    lastAnyDataMs = System.currentTimeMillis()
+                    // geleni hex’e çevir
+                    for (i in 0 until n) {
+                        sb.append(String.format("%02X ", buf[i]))
+                    }
+                    sb.append(" | ")
+                    // okunabilir ASCII karakterleri de göster
+                    val ascii = buf.copyOfRange(0, n).map {
+                        val c = it.toInt() and 0xFF
+                        if (c in 32..126) c.toChar() else '.'
+                    }.joinToString("")
+                    sb.append(ascii)
+                    sb.append('\n')
+
+                    val text = sb.toString()
+                    runOnUiThread {
+                        // Aşırı büyümeyi engelle
+                        val trimmed = if (text.length > 20000) text.takeLast(20000) else text
+                        tvInfo.text = "Gerçek zamanlı ekran (cihaz: $address)\n$trimmed"
+                    }
                 }
 
+                // hiç veri yoksa uyarı
+                if (System.currentTimeMillis() - lastAnyDataMs > 5000) {
+                    runOnUiThread {
+                        tvInfo.append("\n5 sn içinde veri gelmedi. Cihaz akışı başlatmak için özel komut bekliyor olabilir.")
+                    }
+                }
             } catch (e: Exception) {
-                runOnUiThread { append("Hata: ${e.message}") }
-            } finally {
-                runCatching { socket?.close() }
+                runOnUiThread {
+                    tvInfo.append("\nHata: ${e.message}")
+                    Toast.makeText(this, "Bağlantı/okuma hatası: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
-        }.also { it.start() }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun tryConnect(bt: BluetoothAdapter, sock: BluetoothSocket?): BluetoothSocket? {
-        if (sock == null) return null
-        runCatching { if (bt.isDiscovering) bt.cancelDiscovery() }
-        return try {
-            sock.connect()
-            sock
-        } catch (_: Exception) {
-            runCatching { sock.close() }
-            null
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        readerThread?.interrupt()
-        runCatching { socket?.close() }
     }
 }
