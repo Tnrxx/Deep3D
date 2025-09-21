@@ -26,18 +26,18 @@ class MainActivity : AppCompatActivity() {
 
         tvState.text = "Hazır"
 
-        // Cihaz listesine git (Bluetooth tarama/bağlanma)
+        // Cihaz listesi (Bluetooth tarama/bağlanma)
         btnConnect.setOnClickListener {
             val i = Intent(this, DeviceListActivity::class.java)
             startActivityForResult(i, 2001)
         }
 
-        // Gerçek zaman ekranını aç
+        // Gerçek zaman ekranı (şimdilik placeholder)
         btnRealtime.setOnClickListener {
             startActivity(Intent(this, RealtimeActivity::class.java))
         }
 
-        // Grid/Harita (şimdilik bilgi)
+        // Grid/Harita şimdilik bilgi
         btnGrid.setOnClickListener {
             Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
