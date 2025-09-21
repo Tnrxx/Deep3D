@@ -13,6 +13,12 @@ class RealtimeActivity : AppCompatActivity() {
         setContentView(R.layout.activity_realtime)
 
         tvInfo = findViewById(R.id.tvInfo)
-        tvInfo.text = "Gerçek zamanlı ekran (placeholder)"
+
+        val intentAddr = intent.getStringExtra("deviceAddress")
+        val prefsAddr = getSharedPreferences("deep3d_prefs", MODE_PRIVATE)
+            .getString("device_addr", "—")
+        val addr = intentAddr ?: prefsAddr
+
+        tvInfo.text = "Gerçek zamanlı ekran (cihaz: $addr)"
     }
 }
