@@ -8,9 +8,6 @@ class RealtimeActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
-
-        // Basit bir yazı gösterelim (derleme hatası riski olmasın)
-        findViewById<TextView>(R.id.tvRealtime).text =
-            "Gerçek zaman ekranı açıldı (demo)."
+        findViewById<TextView>(R.id.tvRealtime).text = "Gerçek zaman ekranı açıldı (demo)."
     }
 }
