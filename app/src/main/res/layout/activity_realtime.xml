@@ -6,24 +6,24 @@
     android:padding="16dp">
 
     <TextView
-        android:id="@+id/tvRealtimeStatus"
+        android:id="@+id/tvInfo"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Hazır – bağlan ve başlat"
-        android:textSize="18sp" />
+        android:text="Gerçek Zaman Ekranı"
+        android:textSize="18sp"
+        android:paddingBottom="12dp" />
 
     <Button
-        android:id="@+id/btnStartStream"
+        android:id="@+id/btnStart"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Kalibrasyon Başlat" />
+        android:text="Başlat" />
 
     <Button
-        android:id="@+id/btnStopStream"
+        android:id="@+id/btnStop"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Durdur" />
+        android:text="Durdur"
+        android:layout_marginTop="8dp" />
 
 </LinearLayout>
