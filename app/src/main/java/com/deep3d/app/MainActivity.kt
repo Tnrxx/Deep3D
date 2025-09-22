@@ -1,94 +1,99 @@
 package com.deep3d.app
 
 import android.app.Activity
-import android.bluetooth.BluetoothAdapter
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val REQ_PICK_DEVICE = 101
+        private const val PREFS_NAME = "deep3d_prefs"
+        private const val KEY_LAST_MAC = "last_mac"
+        const val EXTRA_ADDRESS = "bt_addr"
+    }
 
     private lateinit var tvState: TextView
     private lateinit var btnConnect: Button
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
-    companion object {
-        private const val REQ_SELECT_DEVICE = 1001
-        const val EXTRA_DEVICE_ADDRESS = "device_address"
-        private const val PREF_LAST_MAC = "last_mac"
-    }
+    private var lastMac: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvState = findViewById(R.id.tvState)            // XML’deki id doğru: tvState
+        tvState = findViewById(R.id.tvState)          // activity_main.xml’deki id
         btnConnect = findViewById(R.id.btnConnect)
         btnRealtime = findViewById(R.id.btnRealtime)
         btnGrid = findViewById(R.id.btnGrid)
 
-        // Üstte durum çubuğu: son bilinen MAC yaz
-        val lastMac = getLastMac()
-        if (!lastMac.isNullOrBlank()) {
-            tvState.text = "Bağlandı: $lastMac"
-        } else {
-            tvState.text = "Hazır"
-        }
+        // Daha önce saklanan MAC'i yükle
+        lastMac = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_MAC, null)
+        renderState()
 
-        // “Bağlan (Bluetooth)”
+        // “Bağlan (Bluetooth)” -> cihaz seçme ekranına git
         btnConnect.setOnClickListener {
-            val bt = BluetoothAdapter.getDefaultAdapter()
-            if (bt == null) {
-                tvState.text = "Bluetooth yok"
-                return@setOnClickListener
-            }
-            if (!bt.isEnabled) {
-                startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), 0)
-                return@setOnClickListener
-            }
-            // Projede zaten DeviceListActivity.kt olduğunu loglardan görüyoruz.
-            // Oradan seçilen cihazın MAC'ini EXTRA_DEVICE_ADDRESS ile geri alacağız.
             val i = Intent(this, DeviceListActivity::class.java)
-            startActivityForResult(i, REQ_SELECT_DEVICE)
+            startActivityForResult(i, REQ_PICK_DEVICE)
         }
 
-        // “Gerçek Zamanlı (grafik)”
+        // “Gerçek Zamanlı (grafik)” -> RealtimeActivity'ye MAC ile geç
         btnRealtime.setOnClickListener {
-            val mac = getLastMac() // Seçilmiş/adresi kayıtlı cihaz
+            val mac = lastMac
+            if (mac.isNullOrBlank()) {
+                Toast.makeText(this, "Önce cihaz seçin/bağlanın.", Toast.LENGTH_SHORT).show()
+                // İstersen otomatik cihaz seçim ekranını da açabiliriz:
+                // startActivityForResult(Intent(this, DeviceListActivity::class.java), REQ_PICK_DEVICE)
+                return@setOnClickListener
+            }
             val i = Intent(this, RealtimeActivity::class.java)
-            // RealtimeActivity içinde nullable okunacak; yoksa SharedPreferences’a bakacak.
-            i.putExtra(EXTRA_DEVICE_ADDRESS, mac)
+            i.putExtra(EXTRA_ADDRESS, mac)
             startActivity(i)
         }
 
-        // “Grid / Harita” (varsa)
+        // Grid / Harita butonuna şimdilik sadece bilgi ver
         btnGrid.setOnClickListener {
-            startActivity(Intent(this, GridActivity::class.java))
+            Toast.makeText(this, "Grid/Harita henüz burada başlatılmıyor.", Toast.LENGTH_SHORT).show()
         }
     }
 
+    // DeviceListActivity sonuç: “device_address” ile döner (projendeki mevcut isim böyleyse)
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_SELECT_DEVICE && resultCode == Activity.RESULT_OK && data != null) {
-            val mac = data.getStringExtra(EXTRA_DEVICE_ADDRESS)
+        if (requestCode == REQ_PICK_DEVICE && resultCode == Activity.RESULT_OK && data != null) {
+            // Çoğu örnekte anahtar “device_address” olur. Sende farklıysa ona göre değiştir.
+            val mac = data.getStringExtra("device_address")
             if (!mac.isNullOrBlank()) {
-                saveLastMac(mac)
-                tvState.text = "Bağlandı: $mac"
+                saveMac(mac)
+                Toast.makeText(this, "Cihaz seçildi: $mac", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "MAC adresi alınamadı.", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // ---- küçük yardımcılar ----
-    private fun saveLastMac(mac: String) {
-        getSharedPreferences("deep3d_prefs", MODE_PRIVATE)
-            .edit().putString(PREF_LAST_MAC, mac).apply()
+    private fun saveMac(mac: String) {
+        lastMac = mac
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_MAC, mac)
+            .apply()
+        renderState()
     }
 
-    private fun getLastMac(): String? {
-        return getSharedPreferences("deep3d_prefs", MODE_PRIVATE)
-            .getString(PREF_LAST_MAC, null)
+    private fun renderState() {
+        tvState.text = if (lastMac.isNullOrBlank()) {
+            "Hazır"
+        } else {
+            "Bağlandı: $lastMac"
+        }
     }
 }
