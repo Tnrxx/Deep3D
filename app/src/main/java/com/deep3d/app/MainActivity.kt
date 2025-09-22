@@ -3,6 +3,7 @@ package com.deep3d.app
 import android.app.AlertDialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
@@ -19,8 +20,11 @@ class MainActivity : AppCompatActivity() {
 
     private val btAdapter: BluetoothAdapter? by lazy { BluetoothAdapter.getDefaultAdapter() }
 
-    // Seçilen cihazı burada saklıyoruz
-    private var selectedDevice: BluetoothDevice? = null
+    companion object {
+        const val EXTRA_ADDR = "extra_device_addr"
+        private const val PREFS = "deep3d_prefs"
+        private const val KEY_ADDR = "last_addr"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,22 +35,21 @@ class MainActivity : AppCompatActivity() {
         btnRealtime = findViewById(R.id.btnRealtime)
         btnGrid = findViewById(R.id.btnGrid)
 
-        tvState.text = "Hazır"
+        // Son kayıtlı adresi göster
+        val last = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ADDR, null)
+        tvState.text = if (last.isNullOrBlank()) "Hazır" else "Bağlandı: $last"
 
-        btnConnect.setOnClickListener { showPairedDevicesDialog() }
+        btnConnect.setOnClickListener { showPicker() }
 
         btnRealtime.setOnClickListener {
-            val dev = selectedDevice
-            if (dev == null) {
-                Toast.makeText(this, "Önce cihaza bağlan (Bluetooth)", Toast.LENGTH_SHORT).show()
-            } else {
-                // Cihaz adresi ve adı RealtimeActivity'ye gönderiliyor
-                val intent = Intent(this, RealtimeActivity::class.java).apply {
-                    putExtra("DEVICE_ADDRESS", dev.address)
-                    putExtra("DEVICE_NAME", dev.name ?: "BT-Device")
-                }
-                startActivity(intent)
+            val addr = currentAddr()
+            if (addr.isNullOrBlank()) {
+                Toast.makeText(this, "Önce cihaza bağlan.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            val i = Intent(this, RealtimeActivity::class.java)
+            i.putExtra(EXTRA_ADDR, addr)
+            startActivity(i)
         }
 
         btnGrid.setOnClickListener {
@@ -54,32 +57,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPairedDevicesDialog() {
+    private fun currentAddr(): String? =
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ADDR, null)
+
+    private fun showPicker() {
         val adapter = btAdapter
         if (adapter == null) {
-            Toast.makeText(this, "Bu cihaz Bluetooth desteklemiyor", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Bu cihaz Bluetooth desteklemiyor.", Toast.LENGTH_LONG).show()
             return
         }
         if (!adapter.isEnabled) {
-            Toast.makeText(this, "Lütfen Bluetooth'u açın", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Lütfen Bluetooth'u açın.", Toast.LENGTH_LONG).show()
             return
         }
-
         val bonded = adapter.bondedDevices?.toList().orEmpty()
         if (bonded.isEmpty()) {
-            Toast.makeText(this, "Eşleştirilmiş cihaz bulunamadı", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Eşleşmiş cihaz yok.", Toast.LENGTH_LONG).show()
             return
         }
 
-        val items = bonded.map { d -> "${d.name ?: "Bilinmeyen"}\n${d.address}" }.toTypedArray()
-
+        val labels = bonded.map { "${it.name}\n${it.address}" }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Cihaz seç")
-            .setItems(items) { _, which ->
-                selectedDevice = bonded[which]
-                val addr = selectedDevice?.address ?: "-"
-                tvState.text = "Bağlandı: $addr"
-                Toast.makeText(this, "Seçildi: $addr", Toast.LENGTH_SHORT).show()
+            .setItems(labels) { _, which ->
+                val dev: BluetoothDevice = bonded[which]
+                getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit().putString(KEY_ADDR, dev.address).apply()
+                tvState.text = "Bağlandı: ${dev.address}"
+                Toast.makeText(this, "Seçildi: ${dev.name}", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("İptal", null)
             .show()
