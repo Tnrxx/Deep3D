@@ -63,26 +63,36 @@ class RealtimeActivity : AppCompatActivity() {
 
         btnSend.setOnClickListener {
             val text = etCmd.text.toString().trim()
-            if (text.isNotEmpty()) sendHexCommand(text)
+            if (text.isNotEmpty()) {
+                // Metin hex mi? (sadece 0-9A-F ve boşluklardan oluşuyorsa hex kabul et)
+                val isHex = text.replace("\\s".toRegex(), "").matches(Regex("(?i)[0-9a-f]+")) &&
+                        text.replace("\\s".toRegex(), "").length % 2 == 0
+                if (isHex) sendHexCommandWithCRLF(text) else sendAsciiWithCRLF(text)
+            }
         }
 
-        btnCmdCRLF.setOnClickListener { sendBytes(byteArrayOf(0x0D, 0x0A)) }    // \r\n
-        btnCmdAA55.setOnClickListener { sendHexCommand("AA55") }                // 0xAA 0x55
-        btnCmds.setOnClickListener { sendHexCommand("AA AA 55 55") }            // örnek set
-        btnAutoProbe.setOnClickListener { sendAscii("PROBE") }                  // saf ASCII
+        btnCmdCRLF.setOnClickListener { sendBytes(byteArrayOf(0x0D, 0x0A)) }         // \r\n
+        btnCmdAA55.setOnClickListener { sendHexCommandWithCRLF("AA55") }             // 0xAA 0x55 + CRLF
+        btnCmds.setOnClickListener { sendHexCommandWithCRLF("AA AA 55 55") }         // örnek set + CRLF
+        btnAutoProbe.setOnClickListener { sendAsciiWithCRLF("PROBE") }               // "PROBE\r\n"
     }
 
     override fun onDestroy() {
         super.onDestroy()
         running = false
-        inS?.close()
-        outS?.close()
-        socket?.close()
+        try { inS?.close() } catch (_: Exception) {}
+        try { outS?.close() } catch (_: Exception) {}
+        try { socket?.close() } catch (_: Exception) {}
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-    // ---------- CONNECT + READ ----------
+    private fun append(line: String) {
+        val t = tvInfo.text.toString()
+        tvInfo.text = if (t.isEmpty()) line else "$t\n$line"
+    }
+
+    // ---------- CONNECT + READ + HANDSHAKE ----------
     @SuppressLint("MissingPermission")
     private fun connectAndRead(mac: String) {
         if (Build.VERSION.SDK_INT >= 31) {
@@ -92,23 +102,17 @@ class RealtimeActivity : AppCompatActivity() {
             ).all {
                 ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
             }
-            if (!ok) {
-                toast("Bluetooth izinleri gerekli.")
-                return
-            }
+            if (!ok) { toast("Bluetooth izinleri gerekli."); return }
         }
+
         val device: BluetoothDevice? = try { bt?.getRemoteDevice(mac) } catch (_: IllegalArgumentException) { null }
-        if (device == null) {
-            append("Hata: MAC geçersiz: $mac")
-            return
-        }
+        if (device == null) { append("Hata: MAC geçersiz: $mac"); return }
 
         append("Bağlanıyor...")
         thread {
             try {
-                // Güvensiz RFCOMM genelde SPP cihazlarında daha uyumlu
-                val sock = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
                 bt?.cancelDiscovery()
+                val sock = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
                 sock.connect()
 
                 socket = sock
@@ -117,75 +121,100 @@ class RealtimeActivity : AppCompatActivity() {
 
                 runOnUiThread { append("Bağlandı. Veri okunuyor...") }
                 running = true
-                readLoop()
+
+                // --- CİHAZLARIN ÇOĞUNDA GEREKEN EL SIKIŞMA ---
+                // 1) sadece CRLF
+                sendBytes(byteArrayOf(0x0D, 0x0A), logPrefix = "Handshake")
+                Thread.sleep(80)
+                // 2) "PROBE\r\n"
+                sendAsciiWithCRLF("PROBE", logPrefix = "Handshake")
+                Thread.sleep(80)
+                // 3) "AA55\r\n"
+                sendHexCommandWithCRLF("AA55", logPrefix = "Handshake")
+
+                // okuma döngüsü
+                readLoopWithAvailable()
             } catch (e: Exception) {
                 runOnUiThread { append("Bağlantı hatası: ${e.javaClass.simpleName}: ${e.message}") }
             }
         }
     }
 
-    private fun readLoop() {
-        val buffer = ByteArray(1024)
+    // ---------- READ (non-blocking style) ----------
+    private fun readLoopWithAvailable() {
+        val buf = ByteArray(1024)
         while (running) {
             try {
                 val ins = inS ?: break
-                val n = ins.read(buffer)
-                if (n > 0) {
-                    val bytes = buffer.copyOf(n)
-                    runOnUiThread {
-                        append("RX (${n} bayt): " + bytes.joinToString(" ") { b -> "%02X".format(b) })
+                val available = ins.available()
+                if (available > 0) {
+                    val toRead = if (available > buf.size) buf.size else available
+                    val n = ins.read(buf, 0, toRead)
+                    if (n > 0) {
+                        val bytes = buf.copyOf(n)
+                        val hex = bytes.joinToString(" ") { "%02X".format(it) }
+                        val ascii = bytes.map { b ->
+                            val c = b.toInt() and 0xFF
+                            if (c in 32..126) c.toChar() else '.'
+                        }.joinToString("")
+                        runOnUiThread { append("RX ($n bayt): $hex    | ASCII: $ascii") }
                     }
+                } else {
+                    Thread.sleep(20)
                 }
             } catch (e: Exception) {
                 runOnUiThread { append("Okuma bitti: ${e.javaClass.simpleName}: ${e.message}") }
+                // Otomatik yeniden bağlanma denemesi:
+                running = false
+                try { socket?.close() } catch (_: Exception) {}
+                val mac = getSharedPreferences("deep3d", MODE_PRIVATE).getString("device_mac", null)
+                if (!mac.isNullOrEmpty()) {
+                    runOnUiThread { append("Yeniden bağlanmayı deniyor...") }
+                    connectAndRead(mac)
+                }
                 break
             }
         }
     }
 
-    // ---------- SEND HELPERS ----------
-    private fun sendAscii(text: String) {
-        sendBytes(text.toByteArray(Charsets.US_ASCII))
+    // ---------- SEND HELPERS (her zaman CRLF ekle) ----------
+    private fun sendAsciiWithCRLF(text: String, logPrefix: String? = null) {
+        val data = (text + "\r\n").toByteArray(Charsets.US_ASCII)
+        sendBytes(data, logPrefix)
     }
 
-    private fun sendHexCommand(input: String) {
-        // "AA55" veya "AA AA 55 55" gibi
+    private fun sendHexCommandWithCRLF(input: String, logPrefix: String? = null) {
         val cleaned = input.replace("\\s".toRegex(), "")
-        if (cleaned.length % 2 != 0) {
+        if (cleaned.isEmpty() || cleaned.length % 2 != 0) {
             append("Komut hatalı: hex uzunluğu çift olmalı.")
             return
         }
-        val out = ByteArray(cleaned.length / 2)
+        val out = ByteArray(cleaned.length / 2 + 2) // + CRLF
         try {
-            for (i in out.indices) {
-                val byteStr = cleaned.substring(i * 2, i * 2 + 2)
-                out[i] = byteStr.toInt(16).toByte()
+            for (i in 0 until cleaned.length step 2) {
+                out[i / 2] = cleaned.substring(i, i + 2).toInt(16).toByte()
             }
-            sendBytes(out)
+            out[out.size - 2] = 0x0D
+            out[out.size - 1] = 0x0A
+            sendBytes(out, logPrefix)
         } catch (e: Exception) {
             append("Komut parse hatası: ${e.message}")
         }
     }
 
-    private fun sendBytes(data: ByteArray) {
+    private fun sendBytes(data: ByteArray, logPrefix: String? = null) {
         try {
             val os = outS ?: run {
-                append("Gönderilemedi (bağlı değil). ${hexPreview(data)}")
+                append("${logPrefix?.let { "$it: " } ?: ""}Gönderilemedi (bağlı değil). " +
+                        data.joinToString(" ") { "%02X".format(it) } + " (${data.size} bayt)")
                 return
             }
             os.write(data)
             os.flush()
-            append("Gönder: ${hexPreview(data)}  (${data.size} bayt)")
+            append("${logPrefix?.let { "$it: " } ?: ""}Gönder: " +
+                    data.joinToString(" ") { "%02X".format(it) } + "  (${data.size} bayt)")
         } catch (e: Exception) {
             append("Gönderim hatası: ${e.javaClass.simpleName}: ${e.message}")
         }
-    }
-
-    private fun hexPreview(bytes: ByteArray): String =
-        bytes.joinToString(" ") { b -> "%02X".format(b) }
-
-    private fun append(line: String) {
-        val t = tvInfo.text.toString()
-        tvInfo.text = if (t.isEmpty()) line else "$t\n$line"
     }
 }
