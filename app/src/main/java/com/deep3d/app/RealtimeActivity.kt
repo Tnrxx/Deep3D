@@ -1,18 +1,17 @@
 package com.deep3d.app
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
-import android.content.Context
 import android.os.Bundle
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import java.io.InputStream
-import java.io.OutputStream
+import androidx.core.view.isVisible
+import kotlinx.coroutines.*
+import java.io.IOException
+import java.nio.charset.Charset
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 
 class RealtimeActivity : AppCompatActivity() {
 
@@ -29,216 +28,217 @@ class RealtimeActivity : AppCompatActivity() {
     // BT
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private var socket: BluetoothSocket? = null
-    private var inS: InputStream? = null
-    private var outS: OutputStream? = null
-    private val reading = AtomicBoolean(false)
-    private var autoProbeOn = AtomicBoolean(false)
-    private var deviceAddress: String? = null
+    private var ioJob: Job? = null
+    private var autoProbeJob: Job? = null
+    private var isConnected = false
+        set(v) {
+            field = v
+            runOnUiThread {
+                setButtonsEnabled(v)
+            }
+        }
 
-    // ---- Activity ----
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
-        tvInfo       = findViewById(R.id.tvInfo)
-        etCmd        = findViewById(R.id.etCmd)
-        btnSend      = findViewById(R.id.btnSend)
-        btnClear     = findViewById(R.id.btnClear)
-        btnCmdCRLF   = findViewById(R.id.btnCmdCRLF)
-        btnCmds      = findViewById(R.id.btnCmds)
-        btnCmdAA55   = findViewById(R.id.btnCmdAA55)
+        // bind
+        tvInfo = findViewById(R.id.tvInfo)
+        etCmd = findViewById(R.id.etCmd)
+        btnSend = findViewById(R.id.btnSend)
+        btnClear = findViewById(R.id.btnClear)
+        btnCmdCRLF = findViewById(R.id.btnCmdCRLF)
+        btnCmds = findViewById(R.id.btnCmds)
+        btnCmdAA55 = findViewById(R.id.btnCmdAA55)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
 
-        // Adres: Intent -> yoksa SharedPreferences
-        deviceAddress = intent.getStringExtra("BT_ADDR")
-        if (deviceAddress.isNullOrBlank() || deviceAddress == "-") {
-            deviceAddress = getSharedPreferences("deep3d_prefs", Context.MODE_PRIVATE)
-                .getString("last_device_address", null)
+        setButtonsEnabled(false)
+
+        // hedef adres: intent -> prefs
+        val addrFromIntent = intent.getStringExtra("device_address")
+        val prefs = getSharedPreferences("deep3d", MODE_PRIVATE)
+        val address = (addrFromIntent ?: prefs.getString("last_device_address", null))?.trim()
+
+        if (address.isNullOrEmpty()) {
+            appendLine("Bağlanıyor...")
+            appendLine("Cihaz adresi yok. Ana ekrandan bağlanın.")
+            return
         }
-        append("Gerçek zamanlı ekran")
-        append("Gerçek zamanlı ekran (cihaz: ${deviceAddress ?: "-"})")
 
-        wireUi()
-    }
+        // Ekran başlığında adresi göster
+        appendLine("Gerçek zamanlı ekran")
+        appendLine("Gerçek zamanlı ekran (cihaz: $address)")
+        appendLine("Bağlanıyor...")
 
-    override fun onStart() {
-        super.onStart()
-        connectAndRead()
-    }
+        // bağlan
+        connectAndRead(address)
 
-    override fun onStop() {
-        super.onStop()
-        stopReading()
-        closeSocket()
-    }
-
-    // ---- UI wiring ----
-    private fun wireUi() {
+        // UI clickler
         btnSend.setOnClickListener {
-            val txt = etCmd.text.toString().trim()
-            if (txt.isEmpty()) return@setOnClickListener
-            sendAscii(txt)
+            val txt = etCmd.text.toString()
+            if (txt.isNotBlank()) sendAscii("$txt\r\n")
         }
-        btnClear.setOnClickListener { tvInfo.text = "" }
+        btnClear.setOnClickListener { tvInfo.text = "Gerçek zamanlı ekran\nGerçek zamanlı ekran (cihaz: ${address})" }
 
-        btnCmdCRLF.setOnClickListener { sendCRLF() }
-        btnCmdAA55.setOnClickListener { sendHex("AA55") }
-        btnCmds.setOnClickListener { sendCommandSet() }
+        btnCmdCRLF.setOnClickListener { sendRaw(byteArrayOf(0x0D, 0x0A)) }
+        btnCmdAA55.setOnClickListener { sendAscii("AA55\r\n") }
+
+        btnCmds.setOnClickListener {
+            // örnek toplu dizisi
+            listOf(
+                byteArrayOf(0x0D, 0x0A),
+                "PROBE\r\n".toByteArray(Charset.forName("US-ASCII")),
+                "AA55\r\n".toByteArray(Charset.forName("US-ASCII"))
+            ).forEach { sendRaw(it) }
+        }
 
         btnAutoProbe.setOnClickListener {
-            val newState = !autoProbeOn.get()
-            autoProbeOn.set(newState)
-            btnAutoProbe.text = if (newState) "Oto Probe (AÇIK)" else "Oto Probe"
-            if (newState) startAutoProbe()    // 500 ms’de bir "PROBE\r\n"
+            if (autoProbeJob == null) {
+                btnAutoProbe.text = "Oto Probe (AÇIK)"
+                autoProbeJob = appScope.launch {
+                    while (isActive) {
+                        if (isConnected) sendAscii("PROBE\r\n") else appendLine("Gönderilmedi (bağlı değil). \"PROBE\"")
+                        delay(500)
+                    }
+                }
+            } else {
+                btnAutoProbe.text = "Oto Probe"
+                autoProbeJob?.cancel()
+                autoProbeJob = null
+            }
         }
     }
 
-    // ---- Connection + Reader ----
-    @SuppressLint("MissingPermission")
-    private fun connectAndRead() {
-        if (socket?.isConnected == true) return
+    private fun setButtonsEnabled(enabled: Boolean) {
+        btnSend.isEnabled = enabled
+        btnCmdCRLF.isEnabled = enabled
+        btnCmds.isEnabled = enabled
+        btnCmdAA55.isEnabled = enabled
+        btnAutoProbe.isEnabled = true        // toggle her zaman basılabilir; bağlı değilse log yazar
+    }
 
-        append("Bağlanıyor...")
-        val addr = deviceAddress
-        if (addr.isNullOrBlank()) {
-            append("Cihaz adresi yok. Ana ekrandan bağlanın.")
+    private fun appendLine(s: String) {
+        runOnUiThread { tvInfo.append("\n$s") }
+    }
+
+    private fun sendAscii(s: String) {
+        sendRaw(s.toByteArray(Charset.forName("US-ASCII")))
+    }
+
+    private fun sendRaw(bytes: ByteArray) {
+        val os = socket?.outputStream
+        if (os == null || !isConnected) {
+            appendLine("Gönderilmedi (bağlı değil). ${pretty(bytes)}")
             return
         }
-
-        Thread {
-            try {
-                val adapter = BluetoothAdapter.getDefaultAdapter()
-                if (adapter == null) {
-                    append("Bluetooth yok.")
-                    return@Thread
-                }
-                if (adapter.isDiscovering) adapter.cancelDiscovery()
-
-                val dev: BluetoothDevice = adapter.getRemoteDevice(addr)
-                // createRfcommSocketToServiceRecord → SPP
-                val tmp = dev.createRfcommSocketToServiceRecord(sppUuid)
-                tmp.connect()
-                socket = tmp
-                inS = tmp.inputStream
-                outS = tmp.outputStream
-
-                append("Bağlandı. Veri okunuyor...")
-
-                // El sıkışma – APK’lerde tipik denenen diziler
-                // 1) CRLF
-                sendCRLF()
-                // 2) "PROBE\r\n"
-                sendAscii("PROBE")
-                // 3) "AA55\r\n"
-                sendHex("AA55")
-                sendCRLF()
-
-                startReader()
-            } catch (t: Throwable) {
-                append("Bağlantı hatası: ${t.javaClass.simpleName}: ${t.message}")
-                closeSocket()
-            }
-        }.start()
+        try {
+            os.write(bytes)
+            os.flush()
+            appendLine("Gönder: ${pretty(bytes)}  (${bytes.size} bayt)")
+        } catch (e: IOException) {
+            appendLine("Yazma hatası: ${e.message}")
+            isConnected = false
+        }
     }
 
-    private fun startReader() {
-        if (reading.getAndSet(true)) return
+    private fun pretty(bytes: ByteArray): String {
+        // ASCII yazılabilir ise ASCII göster, yoksa HEX.
+        val printable = bytes.all { it in 0x20..0x7E || it == 0x0D.toByte() || it == 0x0A.toByte() }
+        return if (printable) {
+            val text = String(bytes, Charset.forName("US-ASCII")).replace("\r", "\\r").replace("\n", "\\n")
+            "\"$text\""
+        } else {
+            bytes.joinToString(" ") { String.format("%02X", it) }
+        }
+    }
 
-        Thread {
-            val buf = ByteArray(1024)
-            while (reading.get()) {
-                try {
-                    val ins = inS ?: break
-                    val n = ins.read(buf)
-                    if (n <= 0) {
-                        append("Okuma bitti: read=$n")
+    @SuppressLint("MissingPermission")
+    private fun connectAndRead(address: String) {
+        ioJob?.cancel()
+        ioJob = appScope.launch {
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            if (adapter == null || !adapter.isEnabled) {
+                appendLine("Bluetooth kapalı.")
+                return@launch
+            }
+            val dev: BluetoothDevice = try {
+                adapter.getRemoteDevice(address)
+            } catch (e: IllegalArgumentException) {
+                appendLine("Geçersiz adres: $address")
+                return@launch
+            }
+
+            // daha temiz bir soket oluştur
+            try {
+                adapter.cancelDiscovery()
+            } catch (_: Exception) {}
+
+            val sock = try {
+                dev.createRfcommSocketToServiceRecord(sppUuid)
+            } catch (e: IOException) {
+                appendLine("Socket oluşturulamadı: ${e.message}")
+                return@launch
+            }
+
+            try {
+                sock.connect()
+                socket = sock
+                isConnected = true
+                appendLine("Bağlandı. Veri okunuyor...")
+
+                // handshake (bazı cihazlar bunu bekliyor)
+                sendRaw(byteArrayOf(0x0D, 0x0A))                   // CRLF
+                sendAscii("PROBE\r\n")                              // “PROBE”
+                sendAscii("AA 55 0D 0A".replace(" ", "").chunked(2).map { it.toInt(16).toByte() }.toByteArray().let {
+                    // Yukarıdaki satır sadece AA 55 0D 0A hex’ini üretmek içindi
+                    // fakat kullanıcıda loglama okunaklı olsun diye ayrıca ASCII de yollayalım:
+                    // Aslında cihaz hex bekliyorsa yukarıdaki it kullanılırdı; bir çok cihaz SPP’de ASCII bekler.
+                    // Basit olsun: "AA55\r\n"
+                    null
+                })
+                sendAscii("AA55\r\n")
+
+                // okuma döngüsü
+                val istream = sock.inputStream
+                val buf = ByteArray(1024)
+                while (isActive && isConnected) {
+                    val n = try {
+                        istream.read(buf)
+                    } catch (e: IOException) {
+                        appendLine("Okuma bitti: ${e.message}")
                         break
                     }
-                    val data = buf.copyOfRange(0, n)
-                    append("GELEN ($n bayt): ${toHex(data)}")
-                } catch (t: Throwable) {
-                    append("Okuma hata: ${t.javaClass.simpleName}: ${t.message}")
-                    break
+                    if (n <= 0) {
+                        appendLine("Okuma bitti: read=$n")
+                        break
+                    }
+                    val data = buf.copyOf(n)
+                    // Gelen veriyi hem HEX hem ASCII özetle
+                    val hex = data.joinToString(" ") { String.format("%02X", it) }
+                    val ascii = data.map {
+                        val b = it.toInt() and 0xFF
+                        if (b in 32..126) b.toChar() else '.'
+                    }.joinToString("")
+                    appendLine("Geldi ($n): $hex  |  '$ascii'")
                 }
+            } catch (e: IOException) {
+                appendLine("Bağlanamadı: ${e.message}")
+            } finally {
+                isConnected = false
+                try { socket?.close() } catch (_: Exception) {}
+                socket = null
+                appendLine("Bağlantı kapandı.")
             }
-            reading.set(false)
-        }.start()
-    }
-
-    private fun stopReading() {
-        reading.set(false)
-        autoProbeOn.set(false)
-    }
-
-    private fun closeSocket() {
-        try { inS?.close() } catch (_: Throwable) {}
-        try { outS?.close() } catch (_: Throwable) {}
-        try { socket?.close() } catch (_: Throwable) {}
-        inS = null; outS = null; socket = null
-    }
-
-    // ---- Send helpers ----
-    private fun sendCRLF() = sendBytes(byteArrayOf(0x0D, 0x0A))
-    private fun startAutoProbe() {
-        Thread {
-            while (autoProbeOn.get()) {
-                sendAscii("PROBE")
-                try { Thread.sleep(500) } catch (_: Throwable) {}
-            }
-        }.start()
-    }
-
-    private fun sendCommandSet() {
-        // APK’de denenen birkaç kalıp arka arkaya
-        sendCRLF()
-        sendAscii("PROBE")
-        sendHex("AA55")
-        sendCRLF()
-    }
-
-    private fun sendAscii(text: String) {
-        // "TEXT\r\n" gönder
-        val payload = text.encodeToByteArray() + byteArrayOf(0x0D, 0x0A)
-        sendBytes(payload, shownAs = "\"$text\"")
-    }
-
-    private fun sendHex(hexNoSpaces: String) {
-        // "AA55" → [0xAA, 0x55] + CRLF
-        val hex = hexNoSpaces.replace(" ", "").uppercase()
-        if (hex.length % 2 != 0) {
-            append("HEX hata: uzunluk çift olmalı")
-            return
-        }
-        val bytes = ByteArray(hex.length / 2) { i ->
-            hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
-        }
-        // Birçok cihaz CRLF bekliyor
-        val payload = bytes + byteArrayOf(0x0D, 0x0A)
-        sendBytes(payload, shownAs = hex.chunked(2).joinToString(" "))
-    }
-
-    private fun sendBytes(bytes: ByteArray, shownAs: String? = null) {
-        try {
-            val outs = outS ?: run {
-                append("Gönderilmedi (bağlı değil). ${shownAs ?: toHex(bytes)}")
-                return
-            }
-            outs.write(bytes)
-            outs.flush()
-            val shown = shownAs ?: toHex(bytes)
-            append("Gönder: $shown  (${bytes.size} bayt)")
-        } catch (t: Throwable) {
-            append("Gönderim hata: ${t.javaClass.simpleName}: ${t.message}")
         }
     }
 
-    // ---- Utils ----
-    private fun toHex(b: ByteArray): String =
-        b.joinToString(" ") { String.format("%02X", it) }
-
-    private fun append(msg: String) {
-        runOnUiThread {
-            tvInfo.append(if (tvInfo.text.isNullOrEmpty()) msg else "\n$msg")
-        }
+    override fun onDestroy() {
+        super.onDestroy()
+        autoProbeJob?.cancel()
+        ioJob?.cancel()
+        try { socket?.close() } catch (_: Exception) {}
+        socket = null
     }
 }
