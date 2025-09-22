@@ -1,16 +1,20 @@
 package com.deep3d.app
 
-import android.app.AlertDialog
+import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -19,16 +23,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
-    private val btAdapter: BluetoothAdapter? by lazy { BluetoothAdapter.getDefaultAdapter() }
+    private val bt: BluetoothAdapter? by lazy { BluetoothAdapter.getDefaultAdapter() }
 
-    // Kaydettiğimiz adres (SharedPreferences)
-    private var connectedDeviceAddress: String?
-        get() = getSharedPreferences("bt", Context.MODE_PRIVATE)
-            .getString("addr", null)
-        set(value) {
-            getSharedPreferences("bt", Context.MODE_PRIVATE)
-                .edit().putString("addr", value).apply()
-        }
+    private val reqBtOn = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* no-op */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,73 +38,77 @@ class MainActivity : AppCompatActivity() {
         btnRealtime = findViewById(R.id.btnRealtime)
         btnGrid = findViewById(R.id.btnGrid)
 
-        updateUiWithSavedAddress()
+        // Önceden seçilmiş cihaz varsa başlıkta göster
+        val sp = getSharedPreferences("deep3d", MODE_PRIVATE)
+        val mac = sp.getString("device_mac", null)
+        tvState.text = if (mac.isNullOrEmpty()) "Hazır" else "Bağlandı: $mac"
 
-        btnConnect.setOnClickListener { pickPairedDevice() }
+        btnConnect.setOnClickListener { pickDevice() }
 
         btnRealtime.setOnClickListener {
-            val addr = connectedDeviceAddress
-            if (addr.isNullOrBlank()) {
+            val saved = getSharedPreferences("deep3d", MODE_PRIVATE).getString("device_mac", null)
+            if (saved.isNullOrEmpty()) {
                 Toast.makeText(this, "Önce cihaza bağlan.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+            } else {
+                startActivity(Intent(this, RealtimeActivity::class.java))
             }
-            // RealtimeActivity soket açacak; adrese buradan gidiyoruz
-            val i = Intent(this, RealtimeActivity::class.java)
-            i.putExtra("device_address", addr)
-            startActivity(i)
         }
 
         btnGrid.setOnClickListener {
-            Toast.makeText(this, "Grid/Harita ekranı henüz hazır değil.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    /** Eşleştirilmiş cihazlar listesinden seçim yaptırır ve adresi kaydeder */
-    private fun pickPairedDevice() {
-        val adapter = btAdapter
-        if (adapter == null) {
-            Toast.makeText(this, "Bu cihazda Bluetooth yok.", Toast.LENGTH_LONG).show()
-            return
+    private fun ensurePerms(): Boolean {
+        if (bt == null) {
+            Toast.makeText(this, "Bu cihaz Bluetooth desteklemiyor.", Toast.LENGTH_LONG).show()
+            return false
         }
-        if (!adapter.isEnabled) {
-            startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-            Toast.makeText(this, "Bluetooth’u açıp tekrar deneyin.", Toast.LENGTH_SHORT).show()
-            return
+        if (!(bt?.isEnabled ?: false)) {
+            reqBtOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            return false
         }
+        if (Build.VERSION.SDK_INT >= 31) {
+            val need = arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ).any {
+                ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (need) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ),
+                    1001
+                )
+                return false
+            }
+        }
+        return true
+    }
 
-        val bonded = adapter.bondedDevices?.toList().orEmpty()
+    @SuppressLint("MissingPermission")
+    private fun pickDevice() {
+        if (!ensurePerms()) return
+        val bonded = bt!!.bondedDevices?.toList().orEmpty()
         if (bonded.isEmpty()) {
-            Toast.makeText(this, "Eşleştirilmiş cihaz yok. Ayarlardan eşleştirin.", Toast.LENGTH_LONG).show()
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            Toast.makeText(this, "Eşleştirilmiş cihaz yok.", Toast.LENGTH_LONG).show()
             return
         }
-
-        val items = bonded.map { "${it.name ?: "Bilinmiyor"}\n${it.address}" }.toTypedArray()
+        val names = bonded.map { "${it.name}\n${it.address}" }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Cihaz seç")
-            .setItems(items) { dialog, which ->
-                val device = bonded[which]
-                setConnectedDevice(device) // MAC’i yaz ve kaydet
-                dialog.dismiss()
+            .setItems(names) { _, which ->
+                val dev: BluetoothDevice = bonded[which]
+                val sp = getSharedPreferences("deep3d", MODE_PRIVATE)
+                sp.edit().putString("device_mac", dev.address).apply()
+                tvState.text = "Bağlandı: ${dev.address}"
+                Toast.makeText(this, "Seçildi: ${dev.name}", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("İptal", null)
             .show()
-    }
-
-    /** UI’ı ve kaydı günceller (BluetoothDevice ile) */
-    private fun setConnectedDevice(device: BluetoothDevice?) {
-        if (device == null) {
-            connectedDeviceAddress = null
-            tvState.text = "Hazır"
-        } else {
-            connectedDeviceAddress = device.address
-            tvState.text = "Bağlandı: ${device.address}"
-        }
-    }
-
-    /** Uygulama açıldığında daha önce seçilmiş adres varsa yaz */
-    private fun updateUiWithSavedAddress() {
-        val addr = connectedDeviceAddress
-        tvState.text = if (addr.isNullOrBlank()) "Hazır" else "Bağlandı: $addr"
     }
 }
