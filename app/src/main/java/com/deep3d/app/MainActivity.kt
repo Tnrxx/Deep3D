@@ -1,5 +1,6 @@
 package com.deep3d.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -23,67 +24,75 @@ class MainActivity : AppCompatActivity() {
         btnRealtime = findViewById(R.id.btnRealtime)
         btnGrid = findViewById(R.id.btnGrid)
 
-        // Ekranı ilk açarken durum metnini güncelle
-        refreshStateLine()
+        // Varsa önceki kaydı göster
+        updateStateWithSavedMac()
 
-        // 1) Bluetooth bağlantı/cihaz seçimi ekranınıza gider (mevcut akış neyse aynen kalsın)
+        // 1) Bluetooth cihaz seçimi
         btnConnect.setOnClickListener {
-            // Sizde hangi activity açılıyorsa onu çağırın; ör: DeviceListActivity
-            startActivity(Intent(this, DeviceListActivity::class.java))
+            // Projende zaten var olan cihaz listesi ekranı
+            val i = Intent(this, DeviceListActivity::class.java)
+            startActivityForResult(i, REQ_PICK_DEVICE)
         }
 
-        // 2) Gerçek Zamanlı (grafik) ekranına geç
+        // 2) Gerçek zamanlı ekrana geçiş – MAC’i intent ile de, yoksa SharedPref’ten de alır
         btnRealtime.setOnClickListener {
-            val addr = SavedBtPrefs.getSavedMac(this) ?: ""
-            val itRealtime = Intent(this, RealtimeActivity::class.java).apply {
-                // RealtimeActivity’de tanımladığımız sabit:
-                // const val EXTRA_DEVICE_ADDRESS = "extra_device_address"
-                putExtra(RealtimeActivity.EXTRA_DEVICE_ADDRESS, addr)
+            val i = Intent(this, RealtimeActivity::class.java)
+            // intent ile geçir (varsa)
+            readSavedMac()?.let { mac ->
+                i.putExtra(EXTRA_DEVICE_ADDRESS, mac)
             }
-            startActivity(itRealtime)
+            startActivity(i)
         }
 
-        // 3) Grid/Harita (siz hangi ekranı kullanıyorsanız)
+        // Örnek: Grid/Harita (şimdilik sadece aç)
         btnGrid.setOnClickListener {
             startActivity(Intent(this, GridActivity::class.java))
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Başka ekranda MAC kaydedildiyse geri dönünce üst yazıyı güncelle
-        refreshStateLine()
-    }
-
-    private fun refreshStateLine() {
-        val mac = SavedBtPrefs.getSavedMac(this)
-        tvState.text = if (mac.isNullOrEmpty()) {
-            "Hazır"
-        } else {
-            "Bağlandı: $mac"
+    // Cihaz listesinden dönüşü yakala ve MAC’i kaydet
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_DEVICE && resultCode == Activity.RESULT_OK) {
+            // Bazı projelerde anahtar farklı olabiliyor; ikisini de deniyoruz
+            val mac = data?.getStringExtra(EXTRA_DEVICE_ADDRESS)
+                ?: data?.getStringExtra("device_address")
+            if (!mac.isNullOrBlank()) {
+                saveMac(mac)
+                updateStateWithSavedMac()
+            } else {
+                tvState.text = "Hazır"
+            }
         }
     }
 
-    /**
-     * Basit SharedPreferences yardımcı sınıfı:
-     * Başka bir ekranda/akışta MAC seçildiğinde şu şekilde kaydedin:
-     * SavedBtPrefs.saveMac(context, macString)
-     */
-    object SavedBtPrefs {
-        private const val PREFS = "deep3d_prefs"
-        private const val KEY_MAC = "saved_mac"
+    private fun updateStateWithSavedMac() {
+        val mac = readSavedMac()
+        tvState.text = if (!mac.isNullOrBlank()) "Bağlandı: $mac" else "Hazır"
+    }
 
-        fun saveMac(ctx: Context, mac: String?) {
-            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_MAC, mac ?: "")
-                .apply()
-        }
+    // --- SharedPreferences yardımcıları ---
+    private fun saveMac(mac: String) {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_MAC, mac)
+            .apply()
+    }
 
-        fun getSavedMac(ctx: Context): String? {
-            val s = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_MAC, "")
-            return if (s.isNullOrBlank()) null else s
-        }
+    private fun readSavedMac(): String? {
+        return getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_MAC, null)
+    }
+
+    companion object {
+        // Intent extra anahtarı – RealtimeActivity ile AYNISI olmalı
+        const val EXTRA_DEVICE_ADDRESS = "EXTRA_DEVICE_ADDRESS"
+
+        // Cihaz seçimi için request code
+        private const val REQ_PICK_DEVICE = 1001
+
+        // SharedPreferences
+        private const val PREFS_NAME = "deep3d_prefs"
+        private const val KEY_MAC = "mac_address"
     }
 }
