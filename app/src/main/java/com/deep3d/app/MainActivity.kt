@@ -1,92 +1,143 @@
 package com.deep3d.app
 
-import android.app.AlertDialog
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var tvState: TextView
+    private lateinit var tvConnected: TextView
     private lateinit var btnConnect: Button
     private lateinit var btnRealtime: Button
     private lateinit var btnGrid: Button
 
     private val btAdapter: BluetoothAdapter? by lazy { BluetoothAdapter.getDefaultAdapter() }
 
-    companion object {
-        const val EXTRA_ADDR = "extra_device_addr"
-        private const val PREFS = "deep3d_prefs"
-        private const val KEY_ADDR = "last_addr"
-    }
+    private val enableBt =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            // Kullanıcı Bluetooth’u açtıysa hemen cihaz listesine geçebiliriz
+            if (btAdapter?.isEnabled == true) showBondedDevices()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvState = findViewById(R.id.tvState)
-        btnConnect = findViewById(R.id.btnConnect)
+        tvConnected = findViewById(R.id.tvConnected)
+        btnConnect  = findViewById(R.id.btnConnect)
         btnRealtime = findViewById(R.id.btnRealtime)
-        btnGrid = findViewById(R.id.btnGrid)
+        btnGrid     = findViewById(R.id.btnGrid)
 
-        // Son kayıtlı adresi göster
-        val last = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ADDR, null)
-        tvState.text = if (last.isNullOrBlank()) "Hazır" else "Bağlandı: $last"
+        // En son seçilen MAC'i başlıkta göster
+        updateConnectedLabel(Prefs.getLastDevice(this))
 
-        btnConnect.setOnClickListener { showPicker() }
+        // 1) "Bağlan (Bluetooth)" → Eşleştirilmiş cihazları göster, seçileni kaydet
+        btnConnect.setOnClickListener {
+            ensureBtEnabled { showBondedDevices() }
+        }
 
+        // 2) "Gerçek Zamanlı (grafik)" → MAC'i intent ile RealtimeActivity'e gönder
         btnRealtime.setOnClickListener {
-            val addr = currentAddr()
-            if (addr.isNullOrBlank()) {
-                Toast.makeText(this, "Önce cihaza bağlan.", Toast.LENGTH_SHORT).show()
+            val mac = Prefs.getLastDevice(this)
+            if (mac.isNullOrBlank()) {
+                toast("Cihaz adresi yok. Önce Bağlan (Bluetooth) ile cihaz seç.")
                 return@setOnClickListener
             }
             val i = Intent(this, RealtimeActivity::class.java)
-            i.putExtra(EXTRA_ADDR, addr)
+            i.putExtra("device_address", mac)
             startActivity(i)
         }
 
+        // 3) "Grid / Harita" (varsa aç, yoksa bu kısmı silebilirsin)
         btnGrid.setOnClickListener {
-            Toast.makeText(this, "Grid/Harita ekranı henüz ekli değil.", Toast.LENGTH_SHORT).show()
+            try {
+                startActivity(Intent(this, GridActivity::class.java))
+            } catch (_: Exception) {
+                toast("Grid/Harita ekranı tanımlı değil.")
+            }
         }
     }
 
-    private fun currentAddr(): String? =
-        getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ADDR, null)
+    /** Eşleştirilmiş (bonded) cihazları listeler ve seçileni kaydeder */
+    private fun showBondedDevices() {
+        val adapter = btAdapter ?: run { toast("Bu cihazda Bluetooth yok."); return }
+        if (!hasBtPermission()) { requestBtPermission(); return }
 
-    private fun showPicker() {
-        val adapter = btAdapter
-        if (adapter == null) {
-            Toast.makeText(this, "Bu cihaz Bluetooth desteklemiyor.", Toast.LENGTH_LONG).show()
-            return
-        }
-        if (!adapter.isEnabled) {
-            Toast.makeText(this, "Lütfen Bluetooth'u açın.", Toast.LENGTH_LONG).show()
-            return
-        }
-        val bonded = adapter.bondedDevices?.toList().orEmpty()
-        if (bonded.isEmpty()) {
-            Toast.makeText(this, "Eşleşmiş cihaz yok.", Toast.LENGTH_LONG).show()
-            return
-        }
+        val devices = adapter.bondedDevices?.toList().orEmpty()
+        if (devices.isEmpty()) { toast("Eşleştirilmiş cihaz bulunamadı."); return }
 
-        val labels = bonded.map { "${it.name}\n${it.address}" }.toTypedArray()
+        val labels = devices.map { "${it.name ?: "Bilinmeyen"}\n${it.address}" }.toTypedArray()
+
         AlertDialog.Builder(this)
             .setTitle("Cihaz seç")
             .setItems(labels) { _, which ->
-                val dev: BluetoothDevice = bonded[which]
-                getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .edit().putString(KEY_ADDR, dev.address).apply()
-                tvState.text = "Bağlandı: ${dev.address}"
-                Toast.makeText(this, "Seçildi: ${dev.name}", Toast.LENGTH_SHORT).show()
+                val d = devices[which]
+                val mac = d.address
+                Prefs.saveLastDevice(this, mac)     // <<<< KAYDET
+                updateConnectedLabel(mac)           // Ekranda göster
+                toast("Seçildi: ${d.name} ($mac)")
             }
             .setNegativeButton("İptal", null)
             .show()
     }
+
+    /** Üst başlığı günceller */
+    private fun updateConnectedLabel(mac: String?) {
+        tvConnected.text = if (mac.isNullOrBlank()) "Bağlandı: -" else "Bağlandı: $mac"
+    }
+
+    /** Bluetooth açık mı? Değilse açtır. */
+    private fun ensureBtEnabled(onEnabled: () -> Unit) {
+        val adapter = btAdapter ?: run { toast("Bluetooth desteklenmiyor."); return }
+        if (!adapter.isEnabled) {
+            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            enableBt.launch(intent)
+        } else {
+            onEnabled()
+        }
+    }
+
+    /** Android 12+ için BLUETOOTH_CONNECT izni kontrolü */
+    private fun hasBtPermission(): Boolean =
+        if (Build.VERSION.SDK_INT >= 31)
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        else true
+
+    private fun requestBtPermission() {
+        if (Build.VERSION.SDK_INT >= 31) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
+                1001
+            )
+        }
+    }
+
+    private fun toast(msg: String) =
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
+
+/** Küçük SharedPreferences yardımcı sınıfı — MAC'i saklar/okur */
+object Prefs {
+    private const val KEY = "deep3d"
+    private const val LAST_ADDR = "last_device_address"
+
+    fun saveLastDevice(ctx: android.content.Context, mac: String) {
+        ctx.getSharedPreferences(KEY, android.content.Context.MODE_PRIVATE)
+            .edit().putString(LAST_ADDR, mac.trim()).apply()
+    }
+
+    fun getLastDevice(ctx: android.content.Context): String? =
+        ctx.getSharedPreferences(KEY, android.content.Context.MODE_PRIVATE)
+            .getString(LAST_ADDR, null)
 }
