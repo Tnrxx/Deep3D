@@ -1,87 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:padding="12dp">
+    android:layout_height="match_parent">
 
-    <TextView
-        android:id="@+id/txtStatus"
-        android:layout_width="0dp"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Gerçek zamanlı ekran"
-        android:textSize="16sp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        android:orientation="vertical"
+        android:padding="16dp">
 
-    <EditText
-        android:id="@+id/edtCmd"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:hint="Komut yaz (örn: AA55)"
-        android:inputType="textCapCharacters"
-        app:layout_constraintTop_toBottomOf="@id/txtStatus"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/btnSend"
-        app:layout_constraintHorizontal_weight="1"
-        android:layout_marginTop="8dp"/>
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Gerçek zamanlı ekran (butonlar aktif)"
+            android:textSize="16sp" />
 
-    <Button
-        android:id="@+id/btnSend"
-        android:layout_width="90dp"
-        android:layout_height="wrap_content"
-        android:text="Gönder"
-        app:layout_constraintTop_toTopOf="@id/edtCmd"
-        app:layout_constraintBottom_toBottomOf="@id/edtCmd"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        <EditText
+            android:id="@+id/edtCmd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Komut yaz (örn: AA55)" />
 
-    <Button
-        android:id="@+id/btnClear"
-        android:layout_width="100dp"
-        android:layout_height="40dp"
-        android:text="Temizle"
-        app:layout_constraintTop_toBottomOf="@id/edtCmd"
-        app:layout_constraintStart_toEndOf="@id/btnSend"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="8dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end">
+            <Button
+                android:id="@+id/btnSend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Gönder" />
+            <Button
+                android:id="@+id/btnClear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Temizle" />
+        </LinearLayout>
 
-    <Button
-        android:id="@+id/btnCrLf"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:text="CRLF"
-        app:layout_constraintTop_toBottomOf="@id/btnClear"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/btnCommands"
-        android:layout_marginTop="8dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:paddingTop="8dp">
+            <Button
+                android:id="@+id/btnCrLf"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="CRLF" />
+            <Button
+                android:id="@+id/btnCommands"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Komutlar" />
+        </LinearLayout>
 
-    <Button
-        android:id="@+id/btnCommands"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:text="Komutlar"
-        app:layout_constraintTop_toTopOf="@id/btnCrLf"
-        app:layout_constraintStart_toEndOf="@id/btnCrLf"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:paddingTop="8dp">
+            <Button
+                android:id="@+id/btnAA55"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="AA55" />
+            <Button
+                android:id="@+id/btnAutoProbe"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Oto Probe" />
+        </LinearLayout>
 
-    <Button
-        android:id="@+id/btnAA55"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:text="AA55"
-        app:layout_constraintTop_toBottomOf="@id/btnCrLf"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/btnAutoProbe"
-        android:layout_marginTop="8dp"/>
-
-    <Button
-        android:id="@+id/btnAutoProbe"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:text="Oto Probe"
-        app:layout_constraintTop_toTopOf="@id/btnAA55"
-        app:layout_constraintStart_toEndOf="@id/btnAA55"
-        app:layout_constraintEnd_toEndOf="parent"/>
-</androidx.constraintlayout.widget.ConstraintLayout>
+    </LinearLayout>
+</ScrollView>
