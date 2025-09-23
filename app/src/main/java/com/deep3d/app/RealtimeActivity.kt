@@ -4,10 +4,7 @@ import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.ComponentActivity
 import java.io.IOException
 import java.nio.charset.Charset
@@ -21,7 +18,7 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
     private lateinit var btnAutoProbe: Button
-    private lateinit var txtRx: TextView
+    private var txtRx: TextView? = null
 
     private var listenThread: Thread? = null
 
@@ -29,13 +26,13 @@ class RealtimeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
-        edtCmd      = findViewById(R.id.edtCmd)
-        btnSend     = findViewById(R.id.btnSend)
-        btnClr      = findViewById(R.id.btnClr)
-        btnCrLf     = findViewById(R.id.btnCrLf)
-        btnAA55     = findViewById(R.id.btnAA55)
-        btnAutoProbe= findViewById(R.id.btnAutoProbe)
-        txtRx       = findViewById(R.id.txtRx)
+        edtCmd       = findViewById(R.id.edtCmd)
+        btnSend      = findViewById(R.id.btnSend)
+        btnClr       = findViewById(R.id.btnClr)
+        btnCrLf      = findViewById(R.id.btnCrLf)
+        btnAA55      = findViewById(R.id.btnAA55)
+        btnAutoProbe = findViewById(R.id.btnAutoProbe)
+        txtRx        = findViewById(R.id.txtRx) // layout doğruysa bulunur
 
         ensureConnectedAndListen()
 
@@ -43,23 +40,19 @@ class RealtimeActivity : ComponentActivity() {
             val t = edtCmd.text?.toString()?.trim().orEmpty()
             if (t.isNotEmpty()) sendText(t)
         }
-
         btnClr.setOnClickListener {
             edtCmd.setText("")
-            txtRx.text = ""
+            txtRx?.text = ""
             toast("Temizlendi")
         }
-
         btnCrLf.setOnClickListener {
             sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
             toast("CRLF eklendi")
         }
-
         btnAA55.setOnClickListener {
             sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
             toast("Gönderildi: AA55")
         }
-
         btnAutoProbe.setOnClickListener {
             thread {
                 sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
@@ -70,16 +63,8 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        ensureConnectedAndListen()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        listenThread?.interrupt()
-        listenThread = null
-    }
+    override fun onResume() { super.onResume(); ensureConnectedAndListen() }
+    override fun onDestroy() { super.onDestroy(); listenThread?.interrupt(); listenThread = null }
 
     private fun ensureConnectedAndListen() {
         if (!ConnectionManager.isConnected || ConnectionManager.socket == null) {
@@ -105,44 +90,35 @@ class RealtimeActivity : ComponentActivity() {
             return
         }
         try {
-            out.write(data)
-            out.flush()
+            out.write(data); out.flush()
         } catch (e: Exception) {
             toast("Yazma hatası: ${e.message}")
             ConnectionManager.close()
         }
     }
 
-    /** CİHAZDAN GELEN BAYTLARI DİNLER + EKRANDA GÖSTERİR */
     private fun startListening(socket: BluetoothSocket) {
-        // Aynı anda iki dinleyici çalışmasın
         if (listenThread?.isAlive == true) return
-
         listenThread = thread(start = true) {
             val buffer = ByteArray(1024)
             try {
                 val input = socket.inputStream
                 while (!Thread.currentThread().isInterrupted) {
-                    val bytes = input.read(buffer) // bloklar
-                    if (bytes > 0) {
-                        val received = buffer.copyOf(bytes)
-
-                        // Logcat’e yaz
-                        Log.d("Deep3D-RT", "RX (${bytes}B): " +
-                                received.joinToString(" ") { String.format("%02X", it) })
-
-                        // Ekrana yaz
+                    val n = input.read(buffer)
+                    if (n > 0) {
+                        val data = buffer.copyOf(n)
+                        val hex  = data.joinToString(" ") { "%02X".format(it) }
+                        Log.d("Deep3D-RT", "RX ($n B): $hex")
                         runOnUiThread {
-                            val hex = received.joinToString(" ") { String.format("%02X", it) }
-                            val prev = txtRx.text?.toString().orEmpty()
-                            txtRx.text = if (prev.isEmpty()) "RX: $hex" else "$prev\nRX: $hex"
+                            val prev = txtRx?.text?.toString().orEmpty()
+                            txtRx?.text = if (prev.isEmpty()) "RX: $hex" else "$prev\nRX: $hex"
                         }
                     }
                 }
             } catch (e: IOException) {
                 runOnUiThread {
-                    val prev = txtRx.text?.toString().orEmpty()
-                    txtRx.text = if (prev.isEmpty())
+                    val prev = txtRx?.text?.toString().orEmpty()
+                    txtRx?.text = if (prev.isEmpty())
                         "Bağlantı kesildi: ${e.message}" else "$prev\nBağlantı kesildi: ${e.message}"
                 }
             }
