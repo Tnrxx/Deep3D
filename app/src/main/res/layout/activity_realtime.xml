@@ -26,57 +26,69 @@
             android:inputType="textVisiblePassword"
             android:maxLines="1" />
 
-        <GridLayout
+        <!-- 1. satır: GÖNDER / TEMİZLE -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:columnCount="2"
-            android:rowCount="3"
-            android:useDefaultMargins="true"
+            android:orientation="horizontal"
+            android:weightSum="2"
             android:layout_marginTop="8dp">
 
             <Button
                 android:id="@+id/btnSend"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_columnWeight="1"
+                android:layout_weight="1"
                 android:text="GÖNDER" />
 
             <Button
                 android:id="@+id/btnClr"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_columnWeight="1"
+                android:layout_weight="1"
                 android:text="TEMİZLE" />
+        </LinearLayout>
+
+        <!-- 2. satır: CRLF / AA55 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginTop="6dp">
 
             <Button
                 android:id="@+id/btnCrLf"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_columnWeight="1"
+                android:layout_weight="1"
                 android:text="CRLF" />
 
             <Button
                 android:id="@+id/btnAA55"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_columnWeight="1"
+                android:layout_weight="1"
                 android:text="AA55" />
+        </LinearLayout>
 
-            <Button
-                android:id="@+id/btnHexSend"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_columnWeight="2"
-                android:text="HEX GÖNDER" />
-        </GridLayout>
+        <!-- 3. satır: HEX GÖNDER (tam genişlik) -->
+        <Button
+            android:id="@+id/btnHexSend"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="HEX GÖNDER" />
 
+        <!-- OTO PROBE -->
         <Button
             android:id="@+id/btnAutoProbe"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="OTO PROBE"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="8dp"
+            android:text="OTO PROBE" />
 
+        <!-- RX/TX günlüğü -->
         <TextView
             android:id="@+id/txtStatus"
             android:layout_width="match_parent"
