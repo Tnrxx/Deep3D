@@ -10,24 +10,31 @@ import androidx.appcompat.app.AppCompatActivity
 class MainActivity : AppCompatActivity() {
 
     private lateinit var txtStatus: TextView
+    private lateinit var btnConnect: Button
+    private lateinit var btnRealtime: Button
+    private lateinit var btnGrid: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        txtStatus = findViewById(R.id.txtStatus)
+        // XML id'leri
+        txtStatus   = findViewById(R.id.txtStatus)
+        btnConnect  = findViewById(R.id.btnConnect)
+        btnRealtime = findViewById(R.id.btnRealtime)
+        btnGrid     = findViewById(R.id.btnGrid)
 
-        findViewById<Button>(R.id.btnConnect).setOnClickListener {
-            // Bluetooth ayarlarını açıyoruz; eşleştirip geri dön
+        btnConnect.setOnClickListener {
             startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-            txtStatus.text = "Bluetooth ayarları açıldı. Cihazı eşleştirip uygulamaya geri dön."
+            txtStatus.text = "Bluetooth ayarları açıldı. Cihazı eşleştirip geri dön."
         }
 
-        findViewById<Button>(R.id.btnRealtime).setOnClickListener {
+        // Bu iki ekran sende farklı isimdeyse, sınıf adlarını burada değiştir
+        btnRealtime.setOnClickListener {
             startActivity(Intent(this, RealtimeActivity::class.java))
         }
 
-        findViewById<Button>(R.id.btnGrid).setOnClickListener {
+        btnGrid.setOnClickListener {
             startActivity(Intent(this, GridActivity::class.java))
         }
     }
