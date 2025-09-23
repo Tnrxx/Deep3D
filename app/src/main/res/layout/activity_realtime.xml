@@ -1,103 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Komut girişi -->
-    <EditText
-        android:id="@+id/edtCmd"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:hint="Komut yaz (örn: AA55)"
-        android:inputType="textCapCharacters"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@+id/btnSend"
-        app:layout_constraintHorizontal_weight="1"
-        android:layout_margin="12dp" />
-
-    <!-- Gönder -->
-    <Button
-        android:id="@+id/btnSend"
-        android:layout_width="72dp"
-        android:layout_height="wrap_content"
-        android:text="Gönder"
-        app:layout_constraintTop_toTopOf="@id/edtCmd"
-        app:layout_constraintBottom_toBottomOf="@id/edtCmd"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginEnd="12dp" />
-
-    <!-- Temizle -->
-    <Button
-        android:id="@+id/btnClr"
-        android:layout_width="72dp"
-        android:layout_height="wrap_content"
-        android:text="Temizle"
-        app:layout_constraintTop_toBottomOf="@id/edtCmd"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="12dp" />
-
-    <!-- Satır 1: CRLF ve Komutlar -->
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        app:layout_constraintTop_toBottomOf="@id/btnClr"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <Button
-            android:id="@+id/btnCrLf"
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/txtTitle"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="CRLF" />
+            android:text="Gerçek zamanlı ekran (butonlar aktif)"
+            android:textStyle="bold" />
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="0dp" />
-
-        <Button
-            android:id="@+id/btnCmds"
-            android:layout_width="0dp"
+        <EditText
+            android:id="@+id/edtCmd"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Komutlar" />
+            android:hint="Komut yaz (örn: AA55)"
+            android:singleLine="true" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
+
+            <Button
+                android:id="@+id/btnSend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Gönder" />
+
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="1dp" />
+
+            <Button
+                android:id="@+id/btnClr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Temizle" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:paddingBottom="8dp">
+
+            <Button
+                android:id="@+id/btnCrLf"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="CRLF" />
+
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="1dp" />
+
+            <Button
+                android:id="@+id/btnCmds"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Komutlar" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2">
+
+            <Button
+                android:id="@+id/btnAA55"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="AA55" />
+
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="1dp" />
+
+            <Button
+                android:id="@+id/btnAutoProbe"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Oto Probe" />
+        </LinearLayout>
+
+        <!-- G E L E N   V E R İ Y İ   G Ö S T E R -->
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="16dp"
+            android:textColor="#444"
+            android:textSize="12sp" />
     </LinearLayout>
-
-    <!-- Satır 2: AA55 ve Oto Probe -->
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintTop_toBottomOf="@+id/btnCrLf"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <Button
-            android:id="@+id/btnAA55"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="AA55" />
-
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="0dp" />
-
-        <Button
-            android:id="@+id/btnAutoProbe"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Oto Probe" />
-    </LinearLayout>
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</ScrollView>
