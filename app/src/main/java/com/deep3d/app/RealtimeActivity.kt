@@ -7,7 +7,7 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import java.io.IOException
+import java.io.InputStream
 import java.nio.charset.Charset
 import kotlin.concurrent.thread
 
@@ -18,10 +18,11 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnClr: Button
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
+    private lateinit var btnHexSend: Button
     private lateinit var btnAutoProbe: Button
-    private lateinit var txtRx: TextView
+    private lateinit var txtStatus: TextView
 
-    @Volatile private var readerRunning = false
+    private var rxThreadStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,67 +33,53 @@ class RealtimeActivity : ComponentActivity() {
         btnClr = findViewById(R.id.btnClr)
         btnCrLf = findViewById(R.id.btnCrLf)
         btnAA55 = findViewById(R.id.btnAA55)
+        btnHexSend = findViewById(R.id.btnHexSend)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
-        txtRx = findViewById(R.id.txtRx)
+        txtStatus = findViewById(R.id.txtStatus)
 
         ensureConnected()
+        startListeningIfNeeded()
 
         btnSend.setOnClickListener {
-            val t = edtCmd.text?.toString()?.trim() ?: ""
-            if (t.isNotEmpty()) {
-                // ASCII gönder (cihaz “AA55” metni bekliyorsa bunu kullan)
-                sendText(t)
-            }
+            val t = edtCmd.text?.toString()?.trim().orEmpty()
+            if (t.isNotEmpty()) sendText(t)
         }
 
         btnClr.setOnClickListener {
             edtCmd.setText("")
-            toast("Temizlendi")
+            append("Temizlendi")
         }
 
         btnCrLf.setOnClickListener {
-            // \r\n
             sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
-            appendRx("TX: 0D 0A")
-            toast("CRLF eklendi")
+            append("TX: 0D 0A")
         }
 
         btnAA55.setOnClickListener {
-            // İkili 0xAA 0x55 gönder (cihaz ham bayt bekliyorsa bunu kullan)
-            val bytes = byteArrayOf(0xAA.toByte(), 0x55.toByte())
-            sendBytes(bytes)
-            appendRx("TX: AA 55")
-            toast("Gönderildi: AA55")
+            sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
+            append("TX: AA 55")
+        }
+
+        btnHexSend.setOnClickListener {
+            val raw = edtCmd.text?.toString().orEmpty()
+            val bytes = parseHex(raw)
+            if (bytes == null || bytes.isEmpty()) {
+                toast("Geçersiz HEX")
+            } else {
+                sendBytes(bytes)
+                append("TX: " + bytes.joinToString(" ") { "%02X".format(it) })
+            }
         }
 
         btnAutoProbe.setOnClickListener {
-            // Basit demo: AA55 ardından CRLF
+            // Basit demo: AA55 -> 100 ms -> CRLF
             thread {
-                val aa55 = byteArrayOf(0xAA.toByte(), 0x55.toByte())
-                sendBytes(aa55)
-                runOnUiThread { appendRx("TX: AA 55") }
-                Thread.sleep(120)
-                val crlf = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte())
-                sendBytes(crlf)
-                runOnUiThread { appendRx("TX: 0D 0A") }
+                sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
+                Thread.sleep(100)
+                sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
             }
             toast("Oto Probe (demo)")
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Bağlıysa RX dinleyiciyi başlat
-        ConnectionManager.socket?.let { sock ->
-            startListening()
-        } ?: run {
-            ensureConnected()
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        readerRunning = false
     }
 
     private fun ensureConnected() {
@@ -104,11 +91,49 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
+    private fun startListeningIfNeeded() {
+        if (rxThreadStarted) return
+        val inp: InputStream? = ConnectionManager.`in` ?: ConnectionManager.input
+        if (inp == null) {
+            // Bazı sürümlerde sadece socket tutuluyor olabilir
+            val sock = ConnectionManager.socket
+            if (sock != null) {
+                startListening(sock.inputStream)
+                return
+            }
+            // Stream yoksa tekrar bağlanmayı öner
+            append("RX başlatılamadı (bağlantı akışı yok)")
+            return
+        }
+        startListening(inp)
+    }
+
+    private fun startListening(input: InputStream) {
+        rxThreadStarted = true
+        append("RX dinleyici başlatıldı...")
+        thread {
+            val buffer = ByteArray(1024)
+            try {
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n > 0) {
+                        val bytes = buffer.copyOf(n)
+                        val hex = bytes.joinToString(" ") { "%02X".format(it) }
+                        runOnUiThread { append("RX: $hex") }
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { append("Bağlantı kesildi: ${e.message}") }
+            } finally {
+                rxThreadStarted = false
+            }
+        }
+    }
+
     private fun sendText(s: String) {
         val data = s.toByteArray(Charset.forName("UTF-8"))
         sendBytes(data)
-        appendRx("TX: $s")
-        toast("Gönderildi: $s")
+        append("TX: $s")
     }
 
     private fun sendBytes(data: ByteArray) {
@@ -127,49 +152,28 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
-    /** RX tarafı: gelen veriyi hexdump + ASCII olarak gösterir */
-    private fun startListening() {
-        if (readerRunning) return
-        readerRunning = true
-        appendRx("RX dinleyici başlatıldı…")
+    /** "AA55", "AA 55", "0xAA 0x55", "\xAA\x55", "AA-55", "AA,55" ... hepsini kabul eder */
+    private fun parseHex(text: String): ByteArray? {
+        val s = text.trim()
+        if (s.isEmpty()) return ByteArray(0)
 
-        thread(name = "Deep3D-RX") {
-            val sock = ConnectionManager.socket
-            if (sock == null) {
-                runOnUiThread { appendRx("RX: soket yok") }
-                readerRunning = false
-                return@thread
-            }
-
-            val input = sock.inputStream
-            val buf = ByteArray(1024)
-
-            try {
-                while (readerRunning) {
-                    val n = input.read(buf) // veri gelene kadar bloklar
-                    if (n > 0) {
-                        val bytes = buf.copyOf(n)
-                        val hex = bytes.joinToString(" ") { String.format("%02X", it) }
-                        val ascii = bytes.map { b ->
-                            val c = (b.toInt() and 0xFF)
-                            if (c in 32..126) c.toChar() else '.'
-                        }.joinToString("")
-                        runOnUiThread {
-                            appendRx("RX: $hex    |$ascii|")
-                        }
-                    }
-                }
-            } catch (io: IOException) {
-                runOnUiThread { appendRx("RX kapandı: ${io.message}") }
-            }
+        // Önce 0x.., \x.. veya iki haneli hex yakala
+        val tokens = Regex("(?i)(?:0x|\\\\x)?([0-9a-f]{2})").findAll(s).map { it.groupValues[1] }.toList()
+        val hexPairs: List<String> = when {
+            tokens.isNotEmpty() -> tokens
+            // Ayracı olmayan tek parça "AA55" gibi ise ikili kır
+            s.matches(Regex("(?i)[0-9a-f]+")) && s.length % 2 == 0 -> s.chunked(2)
+            else -> emptyList()
         }
+        if (hexPairs.isEmpty()) return null
+
+        return hexPairs.map { it.toInt(16).toByte() }.toByteArray()
     }
 
-    private fun appendRx(line: String) {
-        val cur = txtRx.text?.toString() ?: ""
-        val next = if (cur.isEmpty()) line else "$cur\n$line"
-        txtRx.text = next
+    private fun append(msg: String) {
+        txtStatus.append("\n$msg")
     }
 
-    private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
+    private fun toast(t: String) =
+        Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
 }
