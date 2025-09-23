@@ -2,12 +2,8 @@ package com.deep3d.app
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.ComponentActivity
-import java.io.InputStream
 import java.nio.charset.Charset
 import kotlin.concurrent.thread
 
@@ -18,11 +14,9 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnClr: Button
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
-    private lateinit var btnHexSend: Button
     private lateinit var btnAutoProbe: Button
+    private lateinit var btnHexSend: Button
     private lateinit var txtStatus: TextView
-
-    @Volatile private var rxThreadStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,106 +27,99 @@ class RealtimeActivity : ComponentActivity() {
         btnClr = findViewById(R.id.btnClr)
         btnCrLf = findViewById(R.id.btnCrLf)
         btnAA55 = findViewById(R.id.btnAA55)
-        btnHexSend = findViewById(R.id.btnHexSend)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
+        btnHexSend = findViewById(R.id.btnHexSend)     // layout’ta “HEX GÖNDER” butonu
         txtStatus = findViewById(R.id.txtStatus)
 
         ensureConnected()
-        startListeningIfNeeded()
+        startListening() // RX dinlemeyi başlat
 
         btnSend.setOnClickListener {
-            val t = edtCmd.text?.toString()?.trim().orEmpty()
-            if (t.isNotEmpty()) sendText(t)
+            val t = edtCmd.text?.toString()?.trim() ?: ""
+            if (t.isNotEmpty()) {
+                sendText(t)
+            }
         }
 
         btnClr.setOnClickListener {
             edtCmd.setText("")
-            append("Temizlendi")
+            addLog("Temizlendi")
         }
 
         btnCrLf.setOnClickListener {
-            sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
-            append("TX: 0D 0A")
+            sendBytes(byteArrayOf(0x0D, 0x0A))
+            addLog("TX: 0D 0A")
         }
 
         btnAA55.setOnClickListener {
+            // AA 55 ayrı write (bazı cihazlar kabul eder)
             sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
-            append("TX: AA 55")
+            addLog("TX: AA 55")
         }
 
         btnHexSend.setOnClickListener {
-            val raw = edtCmd.text?.toString().orEmpty()
-            val bytes = parseHex(raw)
-            if (bytes == null || bytes.isEmpty()) {
-                toast("Geçersiz HEX")
-            } else {
-                sendBytes(bytes)
-                append("TX: " + bytes.joinToString(" ") { "%02X".format(it) })
-            }
+            // EN NET TEST: AA 55 0D 0A TEK PAKET
+            sendAA55_CRLF_onePacket()
         }
 
         btnAutoProbe.setOnClickListener {
-            // Basit demo: AA55 -> 100 ms -> CRLF
+            // Basit demo: tek paket + kısa bekleme + tekrar
             thread {
-                sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
-                Thread.sleep(100)
-                sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
+                sendAA55_CRLF_onePacket()
+                Thread.sleep(120)
+                sendAA55_CRLF_onePacket()
             }
-            toast("Oto Probe (demo)")
+            Toast.makeText(this, "Oto Probe (demo)", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun ensureConnected() {
         if (!ConnectionManager.isConnected) {
-            toast("Cihaz bağlı değil – bağlanılıyor…")
+            Toast.makeText(this, "Cihaz bağlı değil – bağlanılıyor…", Toast.LENGTH_SHORT).show()
             startActivity(Intent(this, DeviceListActivity::class.java))
         } else {
-            toast("Bağlı: OK")
+            addLog("Bağlı: OK")
+            // SPP doğrulaması için MAC yaz
+            ConnectionManager.socket?.remoteDevice?.address?.let {
+                addLog("SPP bağlandı: $it")
+            }
         }
     }
 
-    private fun startListeningIfNeeded() {
-        if (rxThreadStarted) return
-        val sock = ConnectionManager.socket
-        if (sock == null) {
-            append("RX başlatılamadı (socket yok)")
-            return
-        }
-        startListening(sock.inputStream)
-    }
-
-    private fun startListening(input: InputStream) {
-        rxThreadStarted = true
-        append("RX dinleyici başlatıldı...")
+    // **** RX DİNLEYİCİ ****
+    private fun startListening() {
+        addLog("RX bekleniyor...")
+        val input = ConnectionManager.input ?: return
         thread {
             val buffer = ByteArray(1024)
             try {
                 while (true) {
                     val n = input.read(buffer)
                     if (n > 0) {
-                        val bytes = buffer.copyOf(n)
-                        val hex = bytes.joinToString(" ") { "%02X".format(it) }
-                        runOnUiThread { append("RX: $hex") }
+                        val rx = buffer.copyOf(n)
+                        runOnUiThread {
+                            addLog("RX($n): " + rx.joinToString(" ") { String.format("%02X", it) })
+                        }
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread { append("Bağlantı kesildi: ${e.message}") }
-            } finally {
-                rxThreadStarted = false
+                runOnUiThread { addLog("Bağlantı kesildi: ${e.message}") }
             }
         }
+        addLog("RX dinleyici başlatıldı…")
     }
 
+    // **** GÖNDERME ****
     private fun sendText(s: String) {
         val data = s.toByteArray(Charset.forName("UTF-8"))
         sendBytes(data)
-        append("TX: $s")
+        addLog("TX: $s")
     }
 
     private fun sendBytes(data: ByteArray) {
         val out = ConnectionManager.out
         if (out == null) {
-            toast("Bağlantı yok (yeniden bağlan)")
+            Toast.makeText(this, "Bağlantı yok (yeniden bağlan)", Toast.LENGTH_SHORT).show()
             startActivity(Intent(this, DeviceListActivity::class.java))
             return
         }
@@ -140,36 +127,18 @@ class RealtimeActivity : ComponentActivity() {
             out.write(data)
             out.flush()
         } catch (e: Exception) {
-            toast("Yazma hatası: ${e.message}")
+            Toast.makeText(this, "Yazma hatası: ${e.message}", Toast.LENGTH_SHORT).show()
             ConnectionManager.close()
         }
     }
 
-    /** "AA55", "AA 55", "0xAA 0x55", "\xAA\x55", "AA-55", "AA,55" ... hepsini kabul eder */
-    private fun parseHex(text: String): ByteArray? {
-        val s = text.trim()
-        if (s.isEmpty()) return ByteArray(0)
-
-        // 0x.., \x.. veya iki haneli hex yakala
-        val tokens = Regex("(?i)(?:0x|\\\\x)?([0-9a-f]{2})")
-            .findAll(s)
-            .map { it.groupValues[1] }
-            .toList()
-
-        val hexPairs = when {
-            tokens.isNotEmpty() -> tokens
-            s.matches(Regex("(?i)[0-9a-f]+")) && s.length % 2 == 0 -> s.chunked(2)
-            else -> emptyList()
-        }
-        if (hexPairs.isEmpty()) return null
-
-        return hexPairs.map { it.toInt(16).toByte() }.toByteArray()
+    // Test yardımcıları
+    private fun sendAA55_CRLF_onePacket() {
+        sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte(), 0x0D, 0x0A))
+        addLog("TX: AA 55 0D 0A (tek paket)")
     }
 
-    private fun append(msg: String) {
-        txtStatus.append("\n$msg")
+    private fun addLog(s: String) {
+        txtStatus.append("\n$s")
     }
-
-    private fun toast(t: String) =
-        Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
 }
