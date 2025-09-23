@@ -21,7 +21,8 @@
         <!-- Gerçek zamanlı ekran -->
         <activity
             android:name=".RealtimeActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- Cihaz listesi (eşleşmiş/görülen) -->
         <activity
