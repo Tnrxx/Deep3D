@@ -22,7 +22,7 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnAutoProbe: Button
     private lateinit var txtStatus: TextView
 
-    private var rxThreadStarted = false
+    @Volatile private var rxThreadStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,19 +93,12 @@ class RealtimeActivity : ComponentActivity() {
 
     private fun startListeningIfNeeded() {
         if (rxThreadStarted) return
-        val inp: InputStream? = ConnectionManager.`in` ?: ConnectionManager.input
-        if (inp == null) {
-            // Bazı sürümlerde sadece socket tutuluyor olabilir
-            val sock = ConnectionManager.socket
-            if (sock != null) {
-                startListening(sock.inputStream)
-                return
-            }
-            // Stream yoksa tekrar bağlanmayı öner
-            append("RX başlatılamadı (bağlantı akışı yok)")
+        val sock = ConnectionManager.socket
+        if (sock == null) {
+            append("RX başlatılamadı (socket yok)")
             return
         }
-        startListening(inp)
+        startListening(sock.inputStream)
     }
 
     private fun startListening(input: InputStream) {
@@ -157,11 +150,14 @@ class RealtimeActivity : ComponentActivity() {
         val s = text.trim()
         if (s.isEmpty()) return ByteArray(0)
 
-        // Önce 0x.., \x.. veya iki haneli hex yakala
-        val tokens = Regex("(?i)(?:0x|\\\\x)?([0-9a-f]{2})").findAll(s).map { it.groupValues[1] }.toList()
-        val hexPairs: List<String> = when {
+        // 0x.., \x.. veya iki haneli hex yakala
+        val tokens = Regex("(?i)(?:0x|\\\\x)?([0-9a-f]{2})")
+            .findAll(s)
+            .map { it.groupValues[1] }
+            .toList()
+
+        val hexPairs = when {
             tokens.isNotEmpty() -> tokens
-            // Ayracı olmayan tek parça "AA55" gibi ise ikili kır
             s.matches(Regex("(?i)[0-9a-f]+")) && s.length % 2 == 0 -> s.chunked(2)
             else -> emptyList()
         }
