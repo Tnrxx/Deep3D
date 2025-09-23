@@ -1,12 +1,8 @@
 package com.deep3d.app
 
-import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
-import android.widget.Button
-import android.widget.EditText
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.ComponentActivity
 import java.io.IOException
 import java.nio.charset.Charset
@@ -20,9 +16,7 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
     private lateinit var btnAutoProbe: Button
-
-    // Aynı anda birden fazla dinleyici başlatmamak için
-    @Volatile private var listeningStarted = false
+    private lateinit var txtStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +28,7 @@ class RealtimeActivity : ComponentActivity() {
         btnCrLf = findViewById(R.id.btnCrLf)
         btnAA55 = findViewById(R.id.btnAA55)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
+        txtStatus = findViewById(R.id.txtStatus)
 
         ensureConnected()
 
@@ -44,6 +39,7 @@ class RealtimeActivity : ComponentActivity() {
 
         btnClr.setOnClickListener {
             edtCmd.setText("")
+            txtStatus.text = ""
             toast("Temizlendi")
         }
 
@@ -53,13 +49,11 @@ class RealtimeActivity : ComponentActivity() {
         }
 
         btnAA55.setOnClickListener {
-            // AA55 iki byte hex komut
             sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
             toast("Gönderildi: AA55")
         }
 
         btnAutoProbe.setOnClickListener {
-            // Basit bir demo akışı: AA55 + CRLF
             thread {
                 sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
                 Thread.sleep(100)
@@ -69,23 +63,18 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Ekran görünür olunca dinlemeyi başlat/yeniden başlat
+        ConnectionManager.socket?.let { startListening(it) }
+    }
+
     private fun ensureConnected() {
         if (!ConnectionManager.isConnected) {
             toast("Cihaz bağlı değil – bağlanılıyor…")
             startActivity(Intent(this, DeviceListActivity::class.java))
         } else {
             toast("Bağlı: OK")
-
-            // Eğer soket erişimin varsa dinlemeyi başlat
-            // (ConnectionManager.socket yoksa sorun değil; sadece dinleyici başlamaz)
-            try {
-                val sockField = ConnectionManager::class.java.getDeclaredField("socket")
-                sockField.isAccessible = true
-                val sock = sockField.get(null) as? BluetoothSocket
-                if (sock != null) startListening(sock)
-            } catch (_: Throwable) {
-                // socket alanı yoksa sessizce geç
-            }
         }
     }
 
@@ -111,42 +100,28 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
-    // === GELEN VERİ DİNLEYİCİSİ ===
-    private fun startListening(socket: BluetoothSocket) {
-        if (listeningStarted) return
-        listeningStarted = true
-
-        Thread {
-            val tag = "Deep3D-RT"
+    // ---- Gelen veriyi oku ve ekrana bas ----
+    private fun startListening(socket: android.bluetooth.BluetoothSocket) {
+        thread {
             val buffer = ByteArray(1024)
-
             try {
                 val input = socket.inputStream
                 while (true) {
-                    val bytes = input.read(buffer)
+                    val bytes = input.read(buffer)      // veri gelince döner
                     if (bytes > 0) {
-                        val received = buffer.copyOf(bytes)
-
-                        // HEX dizgesi
-                        val hex = received.joinToString(" ") { String.format("%02X", it) }
-
-                        // Logcat'e dök
-                        Log.d(tag, "RX [$bytes]: $hex")
-
-                        // Ekrana kısa bildirim (ilk 8 byte'ı gösterelim ki rahatsız etmesin)
-                        val preview = if (received.size > 8) received.copyOf(8) else received
-                        val previewHex = preview.joinToString(" ") { String.format("%02X", it) }
+                        val copy = buffer.copyOf(bytes)
+                        val hex = copy.joinToString(" ") { "%02X".format(it) }
                         runOnUiThread {
-                            toast("Cevap: $previewHex" + if (bytes > 8) " …" else "")
+                            txtStatus.append("RX: $hex\n")
                         }
                     }
                 }
             } catch (e: IOException) {
-                runOnUiThread { toast("Bağlantı kesildi: ${e.message}") }
-                Log.e("Deep3D-RT", "Dinleme hatası", e)
-                listeningStarted = false
+                runOnUiThread {
+                    txtStatus.append("Bağlantı kesildi: ${e.message}\n")
+                }
             }
-        }.start()
+        }
     }
 
     private fun toast(t: String) =
