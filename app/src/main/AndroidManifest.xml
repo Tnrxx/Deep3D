@@ -2,13 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.deep3d.app">
 
-    <!-- Android 12+ izinleri -->
+    <!-- Android 12+ (S ve üzeri) -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
-    <!-- Android 11 ve öncesi için klasik Bluetooth + bazı cihazlarda tarama için konum -->
+    <!-- Android 11 ve öncesi -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Bazı cihazlarda tarama için gerekli olabilir -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
@@ -17,12 +18,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
-        <!-- Uygulama içinden gerçek zamanlı ekran -->
+        <!-- Gerçek zamanlı ekran -->
         <activity
             android:name=".RealtimeActivity"
             android:exported="false" />
 
-        <!-- (Varsa) Eşleşmiş cihazları gösteren ekran -->
+        <!-- Cihaz listesi (eşleşmiş/görülen) -->
         <activity
             android:name=".DeviceListActivity"
             android:exported="false" />
