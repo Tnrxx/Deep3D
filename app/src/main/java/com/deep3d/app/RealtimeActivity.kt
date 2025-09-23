@@ -7,150 +7,203 @@ import android.bluetooth.BluetoothSocket
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import java.io.IOException
+import androidx.core.content.ContextCompat
+import java.io.OutputStream
 import java.util.UUID
-import kotlin.concurrent.thread
+import java.util.concurrent.Executors
 
 class RealtimeActivity : AppCompatActivity() {
 
-    companion object {
-        private const val REQ_BT_PERMS = 1001
-        private val SPP_UUID: UUID =
-            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-        private const val PREFS = "bt_prefs"
-        private const val KEY_MAC = "BT_MAC"
-    }
+    private lateinit var edtCmd: EditText
+    private lateinit var btnSend: Button
+    private lateinit var btnClear: Button
+    private lateinit var btnCrLf: Button
+    private lateinit var btnAA55: Button
+    private lateinit var btnAutoProbe: Button
+    private lateinit var txtStatus: TextView
 
+    private val executor = Executors.newSingleThreadExecutor()
     private var socket: BluetoothSocket? = null
+    private var out: OutputStream? = null
+
+    // SPP UUID (RFCOMM)
+    private val SPP_UUID: UUID =
+        UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+    // EŞLEŞİK CİHAZ ADI / MAC
+    private val KNOWN_NAME = "DEEP 3D"   // eşleştirme adınız buysa dokunmayın
+    private val KNOWN_MAC: String? = null // isterseniz AA:BB:CC:DD:EE:FF yazın
+
+    private val REQ_BT_PERMS = 1001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Mevcut düzen dosyan aynı kalsın
         setContentView(R.layout.activity_realtime)
 
-        if (needsBtPerms()) {
-            ActivityCompat.requestPermissions(this, requiredBtPerms(), REQ_BT_PERMS)
+        edtCmd = findViewById(R.id.edtCmd)
+        btnSend = findViewById(R.id.btnSend)
+        btnClear = findViewById(R.id.btnClear)
+        btnCrLf = findViewById(R.id.btnCrLf)
+        btnAA55 = findViewById(R.id.btnAA55)
+        btnAutoProbe = findViewById(R.id.btnAutoProbe)
+        txtStatus = findViewById(R.id.txtStatus)
+
+        setButtonsEnabled(false)
+        txtStatus.text = "Gerçek zamanlı ekran (cihaz: bekleniyor)"
+
+        // Android 12+ için çalışma zamanı izni
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val need = listOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN
+            ).any {
+                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (need) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_SCAN
+                    ),
+                    REQ_BT_PERMS
+                )
+            } else {
+                connectIfPaired()
+            }
         } else {
-            ensureBondedDeviceThenConnect()
+            connectIfPaired()
+        }
+
+        btnClear.setOnClickListener { edtCmd.setText("") }
+
+        btnSend.setOnClickListener {
+            val txt = edtCmd.text.toString().trim()
+            if (txt.isEmpty()) return@setOnClickListener
+            val bytes = parseAsHexOrAscii(txt)
+            write(bytes)
+        }
+
+        btnCrLf.setOnClickListener { write("\r\n".toByteArray()) }
+
+        // 0xAA 0x55 + CRLF
+        btnAA55.setOnClickListener { write(byteArrayOf(0xAA.toByte(), 0x55.toByte(), 0x0D, 0x0A)) }
+
+        // Oto Probe: cihazınız farklı bir komut istiyorsa alttaki satırı değiştirin
+        btnAutoProbe.setOnClickListener {
+            // örnek: "PRB" + CRLF
+            write("PRB\r\n".toByteArray())
         }
     }
 
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_BT_PERMS) {
-            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                ensureBondedDeviceThenConnect()
-            } else {
-                Toast.makeText(this, "Bluetooth izinleri gerekli", Toast.LENGTH_LONG).show()
-            }
+        if (requestCode == REQ_BT_PERMS && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            connectIfPaired()
+        } else {
+            toast("Bluetooth izinleri verilmedi")
         }
     }
 
-    private fun needsBtPerms(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            requiredBtPerms().any {
-                ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            }
-        } else false
-    }
-
-    private fun requiredBtPerms(): Array<String> =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
-        else emptyArray()
-
-    /** Kayıtlı MAC varsa bağlanır; yoksa eşleşmiş cihazlardan seçim ister. */
-    private fun ensureBondedDeviceThenConnect() {
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val savedMac = prefs.getString(KEY_MAC, null)
-
-        if (!savedMac.isNullOrEmpty()) {
-            connectTo(savedMac)
-            return
-        }
-
+    private fun connectIfPaired() {
         val adapter = BluetoothAdapter.getDefaultAdapter()
         if (adapter == null) {
-            Toast.makeText(this, "Bu cihazda Bluetooth yok", Toast.LENGTH_LONG).show()
+            txtStatus.text = "Bluetooth yok"
+            return
+        }
+        if (!adapter.isEnabled) {
+            txtStatus.text = "Bluetooth kapalı (Ana ekrandan Bağlan ile açın)"
             return
         }
 
-        val bonded = adapter.bondedDevices?.toList().orEmpty()
-        if (bonded.isEmpty()) {
-            Toast.makeText(this, "Önce sistem Bluetooth ayarlarından cihazla eşleştirin.", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        val items = bonded.map { "${it.name} (${it.address})" }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Cihaz seçin")
-            .setItems(items) { _, which ->
-                val dev = bonded[which]
-                getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit().putString(KEY_MAC, dev.address).apply()
-                connectTo(dev.address)
+        // Eşleşik cihazlar arasından bul
+        val device: BluetoothDevice? = try {
+            val bonded = adapter.bondedDevices ?: emptySet()
+            bonded.firstOrNull { d ->
+                (KNOWN_MAC != null && d.address.equals(KNOWN_MAC, true)) ||
+                        d.name.equals(KNOWN_NAME, true)
             }
-            .setNegativeButton("İptal", null)
-            .show()
-    }
+        } catch (_: SecurityException) {
+            null
+        }
 
-    /** SPP (RFCOMM) ile bağlanma */
-    private fun connectTo(mac: String) {
-        val adapter = BluetoothAdapter.getDefaultAdapter()
-        val device: BluetoothDevice = try {
-            adapter.getRemoteDevice(mac)
-        } catch (e: IllegalArgumentException) {
-            Toast.makeText(this, "Geçersiz MAC: $mac", Toast.LENGTH_LONG).show()
+        if (device == null) {
+            txtStatus.text = "Cihaz adresi yok. Ana ekrandan bağlanın veya eşleştirin."
             return
         }
 
-        thread {
+        txtStatus.text = "Bağlanıyor... (${device.name})"
+        executor.execute {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                    != PackageManager.PERMISSION_GRANTED
-                ) {
-                    runOnUiThread {
-                        Toast.makeText(this, "BLUETOOTH_CONNECT izni yok", Toast.LENGTH_LONG).show()
-                    }
-                    return@thread
-                }
+                    ContextCompat.checkSelfPermission(
+                        this, Manifest.permission.BLUETOOTH_CONNECT
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) return@execute
 
-                adapter.cancelDiscovery()
-                val sock = device.createRfcommSocketToServiceRecord(SPP_UUID)
-                sock.connect()
-                socket = sock
+                val s = device.createRfcommSocketToServiceRecord(SPP_UUID)
+                BluetoothAdapter.getDefaultAdapter()?.cancelDiscovery()
+                s.connect()
+                socket = s
+                out = s.outputStream
 
                 runOnUiThread {
-                    Toast.makeText(this, "Bağlandı: ${device.name}", Toast.LENGTH_LONG).show()
+                    txtStatus.text = "Bağlı: ${device.name}"
+                    setButtonsEnabled(true)
+                    toast("Bluetooth bağlı")
                 }
-
-                // TODO: Burada inputStream'den veri okuyup ekrana yansıtacağız.
-                // şimdilik sadece bağlantıyı doğruluyoruz.
-
-            } catch (ex: IOException) {
+            } catch (e: Exception) {
                 runOnUiThread {
-                    Toast.makeText(this, "Bağlantı hatası: ${ex.message}", Toast.LENGTH_LONG).show()
+                    txtStatus.text = "Bağlantı hatası: ${e.localizedMessage}"
+                    setButtonsEnabled(false)
                 }
-                try { socket?.close() } catch (_: Exception) {}
-                socket = null
             }
+        }
+    }
+
+    private fun write(bytes: ByteArray) {
+        executor.execute {
+            try {
+                out?.write(bytes)
+                out?.flush()
+            } catch (e: Exception) {
+                runOnUiThread {
+                    toast("Yazma hatası: ${e.localizedMessage}")
+                    setButtonsEnabled(false)
+                }
+            }
+        }
+    }
+
+    private fun setButtonsEnabled(enabled: Boolean) {
+        listOf(btnSend, btnClear, btnCrLf, btnAA55, btnAutoProbe).forEach { it.isEnabled = enabled }
+    }
+
+    private fun parseAsHexOrAscii(input: String): ByteArray {
+        val hex = input.replace(" ", "").uppercase()
+        val isHex = hex.matches(Regex("^[0-9A-F]+$")) && hex.length % 2 == 0
+        return if (isHex) {
+            ByteArray(hex.length / 2) { i ->
+                hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+        } else {
+            // düz metin ise CRLF eklemeyiz; istersen sonradan yaz
+            input.toByteArray()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        try { out?.close() } catch (_: Exception) {}
         try { socket?.close() } catch (_: Exception) {}
+        executor.shutdownNow()
     }
+
+    private fun toast(msg: String) =
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }
