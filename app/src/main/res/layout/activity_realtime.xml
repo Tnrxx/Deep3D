@@ -1,85 +1,89 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:fillViewport="true">
 
     <LinearLayout
-        android:orientation="vertical"
-        android:padding="16dp"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
 
         <TextView
             android:id="@+id/txtTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Gerçek zamanlı ekran (butonlar aktif)"
             android:textSize="16sp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
+            android:paddingBottom="8dp" />
 
         <EditText
             android:id="@+id/edtCmd"
-            android:hint="Komut yaz (örn: AA55)"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <LinearLayout
-            android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:hint="Komut yaz (örn: AA55)"
+            android:inputType="textVisiblePassword"
+            android:maxLines="1" />
+
+        <GridLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="2"
+            android:rowCount="3"
+            android:useDefaultMargins="true"
             android:layout_marginTop="8dp">
 
             <Button
                 android:id="@+id/btnSend"
-                android:text="GÖNDER"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"/>
+                android:layout_columnWeight="1"
+                android:text="GÖNDER" />
 
             <Button
                 android:id="@+id/btnClr"
-                android:text="TEMİZLE"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:orientation="horizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp">
+                android:layout_columnWeight="1"
+                android:text="TEMİZLE" />
 
             <Button
                 android:id="@+id/btnCrLf"
-                android:text="CRLF"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"/>
+                android:layout_columnWeight="1"
+                android:text="CRLF" />
 
             <Button
                 android:id="@+id/btnAA55"
-                android:text="AA55"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"/>
-        </LinearLayout>
+                android:layout_columnWeight="1"
+                android:text="AA55" />
+
+            <Button
+                android:id="@+id/btnHexSend"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="2"
+                android:text="HEX GÖNDER" />
+        </GridLayout>
 
         <Button
             android:id="@+id/btnAutoProbe"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:text="OTO PROBE"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"/>
+            android:layout_marginTop="8dp" />
 
-        <!-- BURASI ÖNEMLİ: RX alanı -->
         <TextView
-            android:id="@+id/txtRx"
-            android:text="RX bekleniyor…"
+            android:id="@+id/txtStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:padding="8dp"/>
+            android:text="RX bekleniyor..."
+            android:paddingTop="12dp"
+            android:lineSpacingExtra="4dp"
+            android:textSize="14sp" />
     </LinearLayout>
 </ScrollView>
