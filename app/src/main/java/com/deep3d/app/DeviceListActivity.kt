@@ -1,207 +1,139 @@
 package com.deep3d.app
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothSocket
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.ArrayAdapter
-import android.widget.ListView
-import android.widget.TextView
-import android.widget.Toast
+import android.view.View
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import java.io.IOException
-import java.util.UUID
 
 class DeviceListActivity : AppCompatActivity() {
 
-    private lateinit var tvStatus: TextView
-    private lateinit var lv: ListView
+    private lateinit var adapter: BluetoothAdapter
+    private lateinit var listView: ListView
+    private lateinit var btnScan: Button
+    private val found = ArrayList<BluetoothDevice>()
+    private lateinit var arrayAdapter: ArrayAdapter<String>
 
-    private val items = ArrayList<String>()
-    private val devices = ArrayList<BluetoothDevice>()
-    private lateinit var adapter: ArrayAdapter<String>
-
-    private val bt: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
-
-    /** Klasik SPP (RFCOMM) UUID */
-    private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-
-    /** BT açma isteği */
-    private val enableBt =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            // Kullanıcı BT'yi açtıysa taramayı başlat
-            if (bt?.isEnabled == true) startScan()
+    private val needPerms: Array<String> by lazy {
+        val p = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 31) {
+            p += Manifest.permission.BLUETOOTH_SCAN
+            p += Manifest.permission.BLUETOOTH_CONNECT
+        } else {
+            p += Manifest.permission.ACCESS_FINE_LOCATION
         }
+        p.toTypedArray()
+    }
 
-    private var receiversRegistered = false
+    private val enableBt =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { _ ->
+            // geri dönünce taramayı başlatırız
+            startScan()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_device_list)
 
-        tvStatus = findViewById(R.id.tvStatus)
-        lv = findViewById(R.id.lvDevices)
+        adapter = BluetoothAdapter.getDefaultAdapter()
+            ?: run { toast("Bluetooth yok"); finish(); return }
 
-        adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, items)
-        lv.adapter = adapter
+        listView = findViewById(R.id.lstDevices)
+        btnScan  = findViewById(R.id.btnScan)
 
-        lv.setOnItemClickListener { _, _, pos, _ ->
-            val d = devices[pos]
-            connectTo(d)
-        }
+        arrayAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
+        listView.adapter = arrayAdapter
 
-        checkPermissionsAndScan()
-    }
+        // Eşleşmiş cihazları göster
+        refreshBonded()
 
-    /** Gerekli izinleri iste ve ardından taramayı başlat */
-    private fun checkPermissionsAndScan() {
-        val needs = mutableListOf<String>()
+        btnScan.setOnClickListener { startScan() }
 
-        if (Build.VERSION.SDK_INT >= 31) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                != PackageManager.PERMISSION_GRANTED
-            ) needs += Manifest.permission.BLUETOOTH_SCAN
+        listView.setOnItemClickListener { _, _, position, _ ->
+            val device = found.getOrNull(position)
+                ?: run { toast("Seçim hatası"); return@setOnItemClickListener }
 
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED
-            ) needs += Manifest.permission.BLUETOOTH_CONNECT
-        } else {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED
-            ) needs += Manifest.permission.ACCESS_FINE_LOCATION
-        }
+            // Adresi kaydet
+            getSharedPreferences("deep3d", MODE_PRIVATE)
+                .edit().putString("device_address", device.address).apply()
 
-        if (needs.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, needs.toTypedArray(), 1001)
-        } else {
-            startScan()
+            toast("Seçildi: ${device.name ?: "Cihaz"}")
+            setResult(Activity.RESULT_OK, Intent().putExtra("address", device.address))
+            finish() // Ana ekrana dön
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1001) startScan()
+    private fun refreshBonded() {
+        found.clear()
+        arrayAdapter.clear()
+        adapter.bondedDevices?.forEach { d ->
+            found.add(d)
+            arrayAdapter.add("★ ${d.name ?: "Bilinmeyen"}\n${d.address}")
+        }
+        arrayAdapter.notifyDataSetChanged()
     }
 
-    @SuppressLint("MissingPermission")
     private fun startScan() {
-        if (bt == null) {
-            tvStatus.text = "Bluetooth bulunamadı"
+        // Yetkiler
+        val missing = needPerms.filter {
+            ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 100)
             return
         }
-        if (bt.isEnabled != true) {
-            // Kullanıcıyı BT'yi açmaya yönlendir
+        if (!adapter.isEnabled) {
             enableBt.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
             return
         }
 
-        // Listeyi temizle
-        items.clear()
-        devices.clear()
-        adapter.notifyDataSetChanged()
-
-        // Eşleşmiş cihazları ekle
-        val bonded = try {
-            bt.bondedDevices ?: emptySet()
-        } catch (_: SecurityException) {
-            emptySet()
-        }
-
-        for (d in bonded) {
-            devices += d
-            items += "Eşleşmiş: ${d.name ?: "Bilinmiyor"} (${d.address})"
-        }
-        adapter.notifyDataSetChanged()
-
-        // Keşfi başlat
-        try {
-            tvStatus.text = "Taranıyor…"
-            if (bt.isDiscovering) bt.cancelDiscovery()
-
-            if (!receiversRegistered) {
-                registerReceiver(foundReceiver, IntentFilter(BluetoothDevice.ACTION_FOUND))
-                registerReceiver(doneReceiver, IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED))
-                receiversRegistered = true
-            }
-            bt.startDiscovery()
-        } catch (_: SecurityException) {
-            tvStatus.text = "İzin gerekli (Bluetooth/Location)"
-        }
+        toast("Taranıyor…")
+        refreshBonded()
+        // yeni bulduklarımız
+        registerReceiver(receiver, IntentFilter(BluetoothDevice.ACTION_FOUND))
+        registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED))
+        if (adapter.isDiscovering) adapter.cancelDiscovery()
+        adapter.startDiscovery()
+        btnScan.isEnabled = false
+        btnScan.text = "Taranıyor…"
     }
 
-    /** Bulunan cihazları listeye ekle */
-    private val foundReceiver = object : BroadcastReceiver() {
-        @SuppressLint("MissingPermission")
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == BluetoothDevice.ACTION_FOUND) {
-                val d: BluetoothDevice? =
-                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                if (d != null && devices.none { it.address == d.address }) {
-                    devices += d
-                    items += "Bulundu: ${d.name ?: "Bilinmiyor"} (${d.address})"
-                    adapter.notifyDataSetChanged()
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            when (i?.action) {
+                BluetoothDevice.ACTION_FOUND -> {
+                    val d: BluetoothDevice? =
+                        i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    if (d != null && found.none { it.address == d.address }) {
+                        found.add(d)
+                        arrayAdapter.add("${d.name ?: "Bulunan"}\n${d.address}")
+                        arrayAdapter.notifyDataSetChanged()
+                    }
+                }
+                BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
+                    btnScan.isEnabled = true
+                    btnScan.text = "Yeniden Tara"
+                    unregisterSafe(this)
+                    toast("Tarama bitti")
                 }
             }
         }
     }
 
-    /** Taramanın bittiğini kullanıcıya bildir */
-    private val doneReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            tvStatus.text = "Tarama bitti. Listeden bir cihaz seç."
-        }
-    }
-
-    /** Seçilen cihaza bağlan */
-    @SuppressLint("MissingPermission")
-    private fun connectTo(d: BluetoothDevice) {
-        tvStatus.text = "Bağlanıyor: ${d.name ?: d.address}"
-
-        Thread {
-            try {
-                if (bt?.isDiscovering == true) bt.cancelDiscovery()
-
-                val socket: BluetoothSocket =
-                    d.createRfcommSocketToServiceRecord(SPP_UUID)
-
-                socket.connect()
-
-                runOnUiThread {
-                    tvStatus.text = "Bağlandı: ${d.name ?: d.address}"
-                    Toast.makeText(this, "Bağlantı OK", Toast.LENGTH_SHORT).show()
-                    // Ana ekrana başarıyı döndür
-                    setResult(
-                        Activity.RESULT_OK,
-                        Intent().putExtra("deviceAddress", d.address)
-                    )
-                    finish()
-                }
-            } catch (e: IOException) {
-                runOnUiThread {
-                    tvStatus.text = "Bağlanılamadı: ${d.name ?: d.address}"
-                    Toast.makeText(this, "Hata: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
-    }
+    private fun unregisterSafe(br: BroadcastReceiver) = runCatching { unregisterReceiver(br) }
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     override fun onDestroy() {
         super.onDestroy()
-        if (receiversRegistered) {
-            runCatching { unregisterReceiver(foundReceiver) }
-            runCatching { unregisterReceiver(doneReceiver) }
-            receiversRegistered = false
-        }
-        try { if (bt?.isDiscovering == true) bt.cancelDiscovery() } catch (_: Exception) {}
+        if (adapter.isDiscovering) adapter.cancelDiscovery()
+        runCatching { unregisterReceiver(receiver) }
     }
 }
