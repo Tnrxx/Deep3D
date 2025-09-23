@@ -1,8 +1,13 @@
 package com.deep3d.app
 
+import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.os.Bundle
-import android.widget.*
+import android.util.Log
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import java.io.IOException
 import java.nio.charset.Charset
@@ -16,30 +21,32 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
     private lateinit var btnAutoProbe: Button
-    private lateinit var txtStatus: TextView
+    private lateinit var txtRx: TextView
+
+    private var listenThread: Thread? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
-        edtCmd = findViewById(R.id.edtCmd)
-        btnSend = findViewById(R.id.btnSend)
-        btnClr = findViewById(R.id.btnClr)
-        btnCrLf = findViewById(R.id.btnCrLf)
-        btnAA55 = findViewById(R.id.btnAA55)
-        btnAutoProbe = findViewById(R.id.btnAutoProbe)
-        txtStatus = findViewById(R.id.txtStatus)
+        edtCmd      = findViewById(R.id.edtCmd)
+        btnSend     = findViewById(R.id.btnSend)
+        btnClr      = findViewById(R.id.btnClr)
+        btnCrLf     = findViewById(R.id.btnCrLf)
+        btnAA55     = findViewById(R.id.btnAA55)
+        btnAutoProbe= findViewById(R.id.btnAutoProbe)
+        txtRx       = findViewById(R.id.txtRx)
 
-        ensureConnected()
+        ensureConnectedAndListen()
 
         btnSend.setOnClickListener {
-            val t = edtCmd.text?.toString()?.trim() ?: ""
+            val t = edtCmd.text?.toString()?.trim().orEmpty()
             if (t.isNotEmpty()) sendText(t)
         }
 
         btnClr.setOnClickListener {
             edtCmd.setText("")
-            txtStatus.text = ""
+            txtRx.text = ""
             toast("Temizlendi")
         }
 
@@ -56,7 +63,7 @@ class RealtimeActivity : ComponentActivity() {
         btnAutoProbe.setOnClickListener {
             thread {
                 sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
-                Thread.sleep(100)
+                Thread.sleep(80)
                 sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
             }
             toast("Oto Probe (demo)")
@@ -65,17 +72,23 @@ class RealtimeActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Ekran görünür olunca dinlemeyi başlat/yeniden başlat
-        ConnectionManager.socket?.let { startListening(it) }
+        ensureConnectedAndListen()
     }
 
-    private fun ensureConnected() {
-        if (!ConnectionManager.isConnected) {
+    override fun onDestroy() {
+        super.onDestroy()
+        listenThread?.interrupt()
+        listenThread = null
+    }
+
+    private fun ensureConnectedAndListen() {
+        if (!ConnectionManager.isConnected || ConnectionManager.socket == null) {
             toast("Cihaz bağlı değil – bağlanılıyor…")
             startActivity(Intent(this, DeviceListActivity::class.java))
-        } else {
-            toast("Bağlı: OK")
+            return
         }
+        toast("Bağlı: OK")
+        startListening(ConnectionManager.socket!!)
     }
 
     private fun sendText(s: String) {
@@ -100,25 +113,37 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
-    // ---- Gelen veriyi oku ve ekrana bas ----
-    private fun startListening(socket: android.bluetooth.BluetoothSocket) {
-        thread {
+    /** CİHAZDAN GELEN BAYTLARI DİNLER + EKRANDA GÖSTERİR */
+    private fun startListening(socket: BluetoothSocket) {
+        // Aynı anda iki dinleyici çalışmasın
+        if (listenThread?.isAlive == true) return
+
+        listenThread = thread(start = true) {
             val buffer = ByteArray(1024)
             try {
                 val input = socket.inputStream
-                while (true) {
-                    val bytes = input.read(buffer)      // veri gelince döner
+                while (!Thread.currentThread().isInterrupted) {
+                    val bytes = input.read(buffer) // bloklar
                     if (bytes > 0) {
-                        val copy = buffer.copyOf(bytes)
-                        val hex = copy.joinToString(" ") { "%02X".format(it) }
+                        val received = buffer.copyOf(bytes)
+
+                        // Logcat’e yaz
+                        Log.d("Deep3D-RT", "RX (${bytes}B): " +
+                                received.joinToString(" ") { String.format("%02X", it) })
+
+                        // Ekrana yaz
                         runOnUiThread {
-                            txtStatus.append("RX: $hex\n")
+                            val hex = received.joinToString(" ") { String.format("%02X", it) }
+                            val prev = txtRx.text?.toString().orEmpty()
+                            txtRx.text = if (prev.isEmpty()) "RX: $hex" else "$prev\nRX: $hex"
                         }
                     }
                 }
             } catch (e: IOException) {
                 runOnUiThread {
-                    txtStatus.append("Bağlantı kesildi: ${e.message}\n")
+                    val prev = txtRx.text?.toString().orEmpty()
+                    txtRx.text = if (prev.isEmpty())
+                        "Bağlantı kesildi: ${e.message}" else "$prev\nBağlantı kesildi: ${e.message}"
                 }
             }
         }
