@@ -11,26 +11,25 @@
         android:layout_height="wrap_content"
         android:text="Hazır"
         android:textSize="16sp"
-        android:paddingBottom="12dp"/>
+        android:paddingBottom="12dp" />
 
     <Button
         android:id="@+id/btnConnect"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Bağlan (Bluetooth)"/>
+        android:text="Bağlan (Bluetooth)" />
 
     <Button
         android:id="@+id/btnRealtime"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Gerçek Zamanlı (grafik)"
-        android:layout_marginTop="12dp"/>
+        android:layout_marginTop="12dp" />
 
     <Button
         android:id="@+id/btnGrid"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Grid / Harita"
-        android:layout_marginTop="12dp"/>
-
+        android:layout_marginTop="12dp" />
 </LinearLayout>
