@@ -1,10 +1,11 @@
 package com.deep3d.app
 
-import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
-import android.widget.*
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import java.io.IOException
 import java.nio.charset.Charset
@@ -18,67 +19,95 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
     private lateinit var btnAutoProbe: Button
-    private var txtRx: TextView? = null
+    private lateinit var txtRx: TextView
 
-    private var listenThread: Thread? = null
+    @Volatile private var readerRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
-        edtCmd       = findViewById(R.id.edtCmd)
-        btnSend      = findViewById(R.id.btnSend)
-        btnClr       = findViewById(R.id.btnClr)
-        btnCrLf      = findViewById(R.id.btnCrLf)
-        btnAA55      = findViewById(R.id.btnAA55)
+        edtCmd = findViewById(R.id.edtCmd)
+        btnSend = findViewById(R.id.btnSend)
+        btnClr = findViewById(R.id.btnClr)
+        btnCrLf = findViewById(R.id.btnCrLf)
+        btnAA55 = findViewById(R.id.btnAA55)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
-        txtRx        = findViewById(R.id.txtRx) // layout doğruysa bulunur
+        txtRx = findViewById(R.id.txtRx)
 
-        ensureConnectedAndListen()
+        ensureConnected()
 
         btnSend.setOnClickListener {
-            val t = edtCmd.text?.toString()?.trim().orEmpty()
-            if (t.isNotEmpty()) sendText(t)
+            val t = edtCmd.text?.toString()?.trim() ?: ""
+            if (t.isNotEmpty()) {
+                // ASCII gönder (cihaz “AA55” metni bekliyorsa bunu kullan)
+                sendText(t)
+            }
         }
+
         btnClr.setOnClickListener {
             edtCmd.setText("")
-            txtRx?.text = ""
             toast("Temizlendi")
         }
+
         btnCrLf.setOnClickListener {
+            // \r\n
             sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
+            appendRx("TX: 0D 0A")
             toast("CRLF eklendi")
         }
+
         btnAA55.setOnClickListener {
-            sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
+            // İkili 0xAA 0x55 gönder (cihaz ham bayt bekliyorsa bunu kullan)
+            val bytes = byteArrayOf(0xAA.toByte(), 0x55.toByte())
+            sendBytes(bytes)
+            appendRx("TX: AA 55")
             toast("Gönderildi: AA55")
         }
+
         btnAutoProbe.setOnClickListener {
+            // Basit demo: AA55 ardından CRLF
             thread {
-                sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
-                Thread.sleep(80)
-                sendBytes(byteArrayOf('\r'.code.toByte(), '\n'.code.toByte()))
+                val aa55 = byteArrayOf(0xAA.toByte(), 0x55.toByte())
+                sendBytes(aa55)
+                runOnUiThread { appendRx("TX: AA 55") }
+                Thread.sleep(120)
+                val crlf = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte())
+                sendBytes(crlf)
+                runOnUiThread { appendRx("TX: 0D 0A") }
             }
             toast("Oto Probe (demo)")
         }
     }
 
-    override fun onResume() { super.onResume(); ensureConnectedAndListen() }
-    override fun onDestroy() { super.onDestroy(); listenThread?.interrupt(); listenThread = null }
+    override fun onResume() {
+        super.onResume()
+        // Bağlıysa RX dinleyiciyi başlat
+        ConnectionManager.socket?.let { sock ->
+            startListening()
+        } ?: run {
+            ensureConnected()
+        }
+    }
 
-    private fun ensureConnectedAndListen() {
-        if (!ConnectionManager.isConnected || ConnectionManager.socket == null) {
+    override fun onPause() {
+        super.onPause()
+        readerRunning = false
+    }
+
+    private fun ensureConnected() {
+        if (!ConnectionManager.isConnected) {
             toast("Cihaz bağlı değil – bağlanılıyor…")
             startActivity(Intent(this, DeviceListActivity::class.java))
-            return
+        } else {
+            toast("Bağlı: OK")
         }
-        toast("Bağlı: OK")
-        startListening(ConnectionManager.socket!!)
     }
 
     private fun sendText(s: String) {
         val data = s.toByteArray(Charset.forName("UTF-8"))
         sendBytes(data)
+        appendRx("TX: $s")
         toast("Gönderildi: $s")
     }
 
@@ -90,41 +119,57 @@ class RealtimeActivity : ComponentActivity() {
             return
         }
         try {
-            out.write(data); out.flush()
+            out.write(data)
+            out.flush()
         } catch (e: Exception) {
             toast("Yazma hatası: ${e.message}")
             ConnectionManager.close()
         }
     }
 
-    private fun startListening(socket: BluetoothSocket) {
-        if (listenThread?.isAlive == true) return
-        listenThread = thread(start = true) {
-            val buffer = ByteArray(1024)
+    /** RX tarafı: gelen veriyi hexdump + ASCII olarak gösterir */
+    private fun startListening() {
+        if (readerRunning) return
+        readerRunning = true
+        appendRx("RX dinleyici başlatıldı…")
+
+        thread(name = "Deep3D-RX") {
+            val sock = ConnectionManager.socket
+            if (sock == null) {
+                runOnUiThread { appendRx("RX: soket yok") }
+                readerRunning = false
+                return@thread
+            }
+
+            val input = sock.inputStream
+            val buf = ByteArray(1024)
+
             try {
-                val input = socket.inputStream
-                while (!Thread.currentThread().isInterrupted) {
-                    val n = input.read(buffer)
+                while (readerRunning) {
+                    val n = input.read(buf) // veri gelene kadar bloklar
                     if (n > 0) {
-                        val data = buffer.copyOf(n)
-                        val hex  = data.joinToString(" ") { "%02X".format(it) }
-                        Log.d("Deep3D-RT", "RX ($n B): $hex")
+                        val bytes = buf.copyOf(n)
+                        val hex = bytes.joinToString(" ") { String.format("%02X", it) }
+                        val ascii = bytes.map { b ->
+                            val c = (b.toInt() and 0xFF)
+                            if (c in 32..126) c.toChar() else '.'
+                        }.joinToString("")
                         runOnUiThread {
-                            val prev = txtRx?.text?.toString().orEmpty()
-                            txtRx?.text = if (prev.isEmpty()) "RX: $hex" else "$prev\nRX: $hex"
+                            appendRx("RX: $hex    |$ascii|")
                         }
                     }
                 }
-            } catch (e: IOException) {
-                runOnUiThread {
-                    val prev = txtRx?.text?.toString().orEmpty()
-                    txtRx?.text = if (prev.isEmpty())
-                        "Bağlantı kesildi: ${e.message}" else "$prev\nBağlantı kesildi: ${e.message}"
-                }
+            } catch (io: IOException) {
+                runOnUiThread { appendRx("RX kapandı: ${io.message}") }
             }
         }
     }
 
-    private fun toast(t: String) =
-        Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
+    private fun appendRx(line: String) {
+        val cur = txtRx.text?.toString() ?: ""
+        val next = if (cur.isEmpty()) line else "$cur\n$line"
+        txtRx.text = next
+    }
+
+    private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
 }
