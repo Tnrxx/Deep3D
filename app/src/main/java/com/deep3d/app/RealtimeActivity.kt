@@ -15,28 +15,27 @@ class RealtimeActivity : ComponentActivity() {
     private lateinit var btnCrLf: Button
     private lateinit var btnAA55: Button
     private lateinit var btnAutoProbe: Button
-    private lateinit var btnHexSend: Button
     private lateinit var txtStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_realtime)
 
+        // Layout'ta zaten olan ID'ler
         edtCmd = findViewById(R.id.edtCmd)
         btnSend = findViewById(R.id.btnSend)
         btnClr = findViewById(R.id.btnClr)
         btnCrLf = findViewById(R.id.btnCrLf)
         btnAA55 = findViewById(R.id.btnAA55)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
-        btnHexSend = findViewById(R.id.btnHexSend)
         txtStatus = findViewById(R.id.txtStatus)
 
         ensureConnected()
         startListening()
 
         btnSend.setOnClickListener {
-            val t = edtCmd.text?.toString()?.trim() ?: ""
-            if (t.isNotEmpty()) sendText(t)
+            val t = edtCmd.text?.toString()?.trim().orEmpty()
+            if (t.isNotEmpty()) sendSmart(t)
         }
         btnClr.setOnClickListener {
             edtCmd.setText("")
@@ -50,19 +49,19 @@ class RealtimeActivity : ComponentActivity() {
             sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
             addLog("TX: AA 55")
         }
-        btnHexSend.setOnClickListener {
-            sendAA55_CRLF_onePacket()
-        }
         btnAutoProbe.setOnClickListener {
             thread {
-                sendAA55_CRLF_onePacket()
+                sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte(), 0x0D, 0x0A))
+                addLog("TX: AA 55 0D 0A")
                 Thread.sleep(120)
-                sendAA55_CRLF_onePacket()
+                sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte(), 0x0D, 0x0A))
+                addLog("TX: AA 55 0D 0A")
             }
             Toast.makeText(this, "Oto Probe (demo)", Toast.LENGTH_SHORT).show()
         }
     }
 
+    /** Bağlı değilse cihaz listesine döndür */
     private fun ensureConnected() {
         if (!ConnectionManager.isConnected) {
             Toast.makeText(this, "Cihaz bağlı değil – bağlanılıyor…", Toast.LENGTH_SHORT).show()
@@ -75,6 +74,7 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
+    /** RX dinleyici */
     private fun startListening() {
         addLog("RX bekleniyor...")
         val input = ConnectionManager.input ?: return
@@ -97,10 +97,42 @@ class RealtimeActivity : ComponentActivity() {
         addLog("RX dinleyici başlatıldı…")
     }
 
-    private fun sendText(s: String) {
-        val data = s.toByteArray(Charset.forName("UTF-8"))
-        sendBytes(data)
-        addLog("TX: $s")
+    /** Akıllı gönderim: HEX patern ise bayt; değilse UTF-8 metin */
+    private fun sendSmart(text: String) {
+        // Escape dizilerini işle (\r, \n, \t)
+        val unescaped = text
+            .replace("\\r", "\r")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+
+        val hex = tryParseHex(unescaped)
+        if (hex != null) {
+            sendBytes(hex)
+            addLog("TX: " + hex.joinToString(" ") { String.format("%02X", it) })
+        } else {
+            val data = unescaped.toByteArray(Charset.forName("UTF-8"))
+            sendBytes(data)
+            addLog("TX: $unescaped")
+        }
+    }
+
+    /** "AA55", "AA 55 0D 0A", "0xAA 0x55" gibi girdiyi baytlara çevirir; uymuyorsa null */
+    private fun tryParseHex(s: String): ByteArray? {
+        val pattern = Regex("(?i)(0x)?[0-9a-f]{2}")
+        val matches = pattern.findAll(s).map { it.value }.toList()
+        if (matches.isEmpty()) return null
+
+        // Eğer girilen karakterlerin büyük kısmı hex değilse metin say.
+        val hexChars = Regex("(?i)[0-9a-fx\\s]").findAll(s).count()
+        if (hexChars < s.filterNot { it.isWhitespace() }.length * 0.7) return null
+
+        return try {
+            matches.map { it.replace("0x", "", ignoreCase = true) }
+                .map { it.toInt(16).toByte() }
+                .toByteArray()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun sendBytes(data: ByteArray) {
@@ -117,11 +149,6 @@ class RealtimeActivity : ComponentActivity() {
             Toast.makeText(this, "Yazma hatası: ${e.message}", Toast.LENGTH_SHORT).show()
             ConnectionManager.close()
         }
-    }
-
-    private fun sendAA55_CRLF_onePacket() {
-        sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte(), 0x0D, 0x0A))
-        addLog("TX: AA 55 0D 0A (tek paket)")
     }
 
     private fun addLog(s: String) {
