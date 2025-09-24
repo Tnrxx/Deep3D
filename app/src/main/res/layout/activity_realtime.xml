@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,27 +10,24 @@
         android:padding="16dp">
 
         <TextView
-            android:id="@+id/txtTitle"
+            android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Gerçek zamanlı ekran (butonlar aktif)"
-            android:textSize="16sp"
-            android:paddingBottom="8dp" />
+            android:textStyle="bold" />
 
         <EditText
             android:id="@+id/edtCmd"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Komut yaz (örn: AA55)"
-            android:inputType="textVisiblePassword"
-            android:maxLines="1" />
+            android:inputType="text" />
 
-        <!-- 1. satır -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:weightSum="2"
+            android:gravity="center"
             android:layout_marginTop="8dp">
 
             <Button
@@ -49,13 +45,12 @@
                 android:text="TEMİZLE" />
         </LinearLayout>
 
-        <!-- 2. satır -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:weightSum="2"
-            android:layout_marginTop="6dp">
+            android:gravity="center"
+            android:layout_marginTop="8dp">
 
             <Button
                 android:id="@+id/btnCrLf"
@@ -72,30 +67,27 @@
                 android:text="AA55" />
         </LinearLayout>
 
-        <!-- HEX GÖNDER -->
         <Button
             android:id="@+id/btnHexSend"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="HEX GÖNDER" />
+            android:text="HEX GÖNDER (AA 55 0D 0A)"
+            android:layout_marginTop="8dp" />
 
-        <!-- OTO PROBE -->
         <Button
             android:id="@+id/btnAutoProbe"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="OTO PROBE" />
+            android:text="OTO PROBE"
+            android:layout_marginTop="8dp" />
 
-        <!-- RX/TX günlüğü -->
         <TextView
             android:id="@+id/txtStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="RX bekleniyor..."
-            android:paddingTop="12dp"
-            android:lineSpacingExtra="4dp"
-            android:textSize="14sp" />
+            android:layout_marginTop="12dp"
+            android:padding="8dp" />
+
     </LinearLayout>
 </ScrollView>
