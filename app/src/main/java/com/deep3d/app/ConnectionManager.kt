@@ -7,7 +7,6 @@ import java.io.OutputStream
 import java.util.UUID
 
 object ConnectionManager {
-    // Klasik Bluetooth SPP UUID (RFCOMM)
     private val SPP_UUID: UUID =
         UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
