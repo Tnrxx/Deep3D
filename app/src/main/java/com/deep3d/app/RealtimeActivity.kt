@@ -64,10 +64,9 @@ class RealtimeActivity : ComponentActivity() {
         }
 
         btnHexSend.setOnClickListener {
-            val hex = edtCmd.text?.toString().orEmpty()
-            val data = parseHex(hex)
+            val data = parseHex(edtCmd.text?.toString().orEmpty())
             if (data == null) {
-                toast("Hex format: AA55  veya  AA 55  veya  AA,55")
+                toast("Hex format: AA55  /  AA 55  /  AA,55  /  0xAA 0x55")
             } else {
                 sendBytes(data)
                 appendLog("TX: " + data.joinToString(" ") { String.format("%02X", it) })
@@ -99,10 +98,15 @@ class RealtimeActivity : ComponentActivity() {
         rxThread = null
     }
 
+    /** ConnectionManager.input ile dinle */
     private fun startListening() {
         if (rxThread?.isAlive == true) return
+        val input = ConnectionManager.input ?: run {
+            appendLog("RX başlatılamadı: input null")
+            return
+        }
         appendLog("RX dinleyici başlatıldı...")
-        val input = ConnectionManager.`in` ?: return
+
         rxThread = thread(name = "rx-thread", start = true) {
             val buffer = ByteArray(1024)
             try {
@@ -121,14 +125,13 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
+    /** AA55 / AA 55 / AA,55 / 0xAA 0x55 -> ByteArray */
     private fun parseHex(text: String): ByteArray? {
-        // "AA55", "AA 55", "AA,55", "0xAA 0x55" hepsini kabul eder
         val clean = text
             .replace(",", " ")
             .replace("0x", "", ignoreCase = true)
             .replace("\\s+".toRegex(), " ")
             .trim()
-
         if (clean.isEmpty()) return ByteArray(0)
 
         val out = ArrayList<Byte>()
