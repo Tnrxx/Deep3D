@@ -28,42 +28,32 @@ class RealtimeActivity : ComponentActivity() {
         btnCrLf = findViewById(R.id.btnCrLf)
         btnAA55 = findViewById(R.id.btnAA55)
         btnAutoProbe = findViewById(R.id.btnAutoProbe)
-        btnHexSend = findViewById(R.id.btnHexSend)     // layout’ta “HEX GÖNDER” butonu
+        btnHexSend = findViewById(R.id.btnHexSend)
         txtStatus = findViewById(R.id.txtStatus)
 
         ensureConnected()
-        startListening() // RX dinlemeyi başlat
+        startListening()
 
         btnSend.setOnClickListener {
             val t = edtCmd.text?.toString()?.trim() ?: ""
-            if (t.isNotEmpty()) {
-                sendText(t)
-            }
+            if (t.isNotEmpty()) sendText(t)
         }
-
         btnClr.setOnClickListener {
             edtCmd.setText("")
             addLog("Temizlendi")
         }
-
         btnCrLf.setOnClickListener {
             sendBytes(byteArrayOf(0x0D, 0x0A))
             addLog("TX: 0D 0A")
         }
-
         btnAA55.setOnClickListener {
-            // AA 55 ayrı write (bazı cihazlar kabul eder)
             sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte()))
             addLog("TX: AA 55")
         }
-
         btnHexSend.setOnClickListener {
-            // EN NET TEST: AA 55 0D 0A TEK PAKET
             sendAA55_CRLF_onePacket()
         }
-
         btnAutoProbe.setOnClickListener {
-            // Basit demo: tek paket + kısa bekleme + tekrar
             thread {
                 sendAA55_CRLF_onePacket()
                 Thread.sleep(120)
@@ -79,14 +69,12 @@ class RealtimeActivity : ComponentActivity() {
             startActivity(Intent(this, DeviceListActivity::class.java))
         } else {
             addLog("Bağlı: OK")
-            // SPP doğrulaması için MAC yaz
             ConnectionManager.socket?.remoteDevice?.address?.let {
                 addLog("SPP bağlandı: $it")
             }
         }
     }
 
-    // **** RX DİNLEYİCİ ****
     private fun startListening() {
         addLog("RX bekleniyor...")
         val input = ConnectionManager.input ?: return
@@ -109,7 +97,6 @@ class RealtimeActivity : ComponentActivity() {
         addLog("RX dinleyici başlatıldı…")
     }
 
-    // **** GÖNDERME ****
     private fun sendText(s: String) {
         val data = s.toByteArray(Charset.forName("UTF-8"))
         sendBytes(data)
@@ -132,7 +119,6 @@ class RealtimeActivity : ComponentActivity() {
         }
     }
 
-    // Test yardımcıları
     private fun sendAA55_CRLF_onePacket() {
         sendBytes(byteArrayOf(0xAA.toByte(), 0x55.toByte(), 0x0D, 0x0A))
         addLog("TX: AA 55 0D 0A (tek paket)")
